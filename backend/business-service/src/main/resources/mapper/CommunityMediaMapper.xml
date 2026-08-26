@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.petassistant.business.data.mapper.CommunityMediaMapper">
+
+    <resultMap id="mediaMap" type="com.petassistant.business.data.entity.CommunityMediaEntity">
+        <constructor>
+            <idArg column="id" javaType="java.lang.String"/>
+            <arg column="owner_id" javaType="java.lang.String"/>
+            <arg column="post_id" javaType="java.lang.String"/>
+            <arg column="object_key" javaType="java.lang.String"/>
+            <arg column="original_filename" javaType="java.lang.String"/>
+            <arg column="media_type" javaType="java.lang.String"/>
+            <arg column="content_type" javaType="java.lang.String"/>
+            <arg column="size_bytes" javaType="_long"/>
+            <arg column="checksum_sha256" javaType="java.lang.String"/>
+            <arg column="status" javaType="java.lang.String"/>
+            <arg column="processing_status" javaType="java.lang.String"/>
+            <arg column="created_at" javaType="java.time.Instant"/>
+            <arg column="confirmed_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+
+    <sql id="columns">
+        id, owner_id, post_id, object_key, original_filename, media_type, content_type,
+        size_bytes, checksum_sha256, status, processing_status, created_at, confirmed_at
+    </sql>
+
+    <insert id="insert">
+        INSERT INTO community_media
+            (id, owner_id, post_id, object_key, original_filename, media_type, content_type,
+             size_bytes, checksum_sha256, status, processing_status, created_at, confirmed_at)
+        VALUES
+            (#{id}, #{ownerId}, #{postId}, #{objectKey}, #{originalFilename}, #{mediaType}, #{contentType},
+             #{sizeBytes}, #{checksumSha256}, #{status}, #{processingStatus}, #{createdAt}, #{confirmedAt})
+    </insert>
+
+    <select id="findOwned" resultMap="mediaMap">
+        SELECT <include refid="columns"/> FROM community_media WHERE id = #{id} AND owner_id = #{ownerId}
+    </select>
+
+    <select id="findAccessible" resultMap="mediaMap">
+        SELECT m.id, m.owner_id, m.post_id, m.object_key, m.original_filename, m.media_type,
+               m.content_type, m.size_bytes, m.checksum_sha256, m.status, m.processing_status,
+               m.created_at, m.confirmed_at
+        FROM community_media m
+        LEFT JOIN community_post p ON p.id = m.post_id
+        WHERE m.id = #{id} AND m.status = 'CONFIRMED'
+          AND (m.owner_id = #{userId} OR p.status = 'PUBLISHED')
+    </select>
+
+    <select id="findByPostId" resultMap="mediaMap">
+        SELECT <include refid="columns"/> FROM community_media
+        WHERE post_id = #{postId} AND status = 'CONFIRMED'
+        ORDER BY created_at
+    </select>
+
+    <select id="countAttachable" resultType="long">
+        SELECT COUNT(*) FROM community_media
+        WHERE owner_id = #{ownerId} AND status = 'CONFIRMED'
+          AND (post_id IS NULL OR post_id = '')
+          AND id IN
+          <foreach collection="mediaIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+    </select>
+
+    <update id="detachFromPost">
+        UPDATE community_media SET post_id = NULL WHERE post_id = #{postId} AND owner_id = #{ownerId}
+    </update>
+
+    <update id="attachToPost">
+        UPDATE community_media SET post_id = #{postId}
+        WHERE owner_id = #{ownerId} AND status = 'CONFIRMED' AND post_id IS NULL
+          AND id IN
+          <foreach collection="mediaIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+    </update>
+
+    <update id="markConfirmed">
+        UPDATE community_media SET status = 'CONFIRMED', confirmed_at = #{confirmedAt}
+        WHERE id = #{id} AND owner_id = #{ownerId} AND status = 'PENDING'
+    </update>
+
+    <update id="markProcessingReady">
+        UPDATE community_media SET processing_status = 'READY'
+        WHERE id = #{id} AND status = 'CONFIRMED'
+    </update>
+</mapper>

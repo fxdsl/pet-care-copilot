@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.petassistant.business.data.mapper.PetProfileMapper">
+
+    <!-- 使用构造器映射，保持数据库字段与 Java record 明确对应。 -->
+    <resultMap id="petProfileEntityMap" type="com.petassistant.business.data.entity.PetProfileEntity">
+        <constructor>
+            <idArg column="id" javaType="java.lang.String"/>
+            <arg column="user_id" javaType="java.lang.String"/>
+            <arg column="name" javaType="java.lang.String"/>
+            <arg column="pet_type" javaType="java.lang.String"/>
+            <arg column="breed" javaType="java.lang.String"/>
+            <arg column="age_months" javaType="java.lang.Integer"/>
+            <arg column="weight_kg" javaType="java.math.BigDecimal"/>
+            <arg column="notes" javaType="java.lang.String"/>
+            <arg column="created_at" javaType="java.time.Instant"/>
+            <arg column="updated_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+
+    <insert id="insert">
+        INSERT INTO pet_profile
+            (id, user_id, name, pet_type, breed, age_months, weight_kg, notes, created_at, updated_at)
+        VALUES
+            (#{id}, #{userId}, #{name}, #{petType}, #{breed}, #{ageMonths}, #{weightKg}, #{notes}, #{createdAt}, #{updatedAt})
+    </insert>
+
+    <select id="findByIdAndUser" resultMap="petProfileEntityMap">
+        SELECT id, user_id, name, pet_type, breed, age_months, weight_kg, notes, created_at, updated_at
+        FROM pet_profile
+        WHERE id = #{id} AND user_id = #{userId}
+    </select>
+
+    <select id="findRecentByUser" resultMap="petProfileEntityMap">
+        SELECT id, user_id, name, pet_type, breed, age_months, weight_kg, notes, created_at, updated_at
+        FROM pet_profile
+        WHERE user_id = #{userId}
+        ORDER BY created_at DESC
+        LIMIT #{limit}
+    </select>
+
+    <update id="update">
+        UPDATE pet_profile
+        SET name = #{name}, pet_type = #{petType}, breed = #{breed},
+            age_months = #{ageMonths}, weight_kg = #{weightKg}, notes = #{notes},
+            updated_at = #{updatedAt}
+        WHERE id = #{id} AND user_id = #{userId}
+    </update>
+
+    <delete id="deleteByIdAndUser">
+        DELETE FROM pet_profile
+        WHERE id = #{id} AND user_id = #{userId}
+    </delete>
+</mapper>

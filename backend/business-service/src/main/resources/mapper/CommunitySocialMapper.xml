@@ -1,0 +1,234 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.petassistant.business.data.mapper.CommunitySocialMapper">
+
+    <resultMap id="commentViewMap" type="com.petassistant.business.data.dto.internal.CommunityCommentView">
+        <constructor>
+            <idArg column="id" javaType="java.lang.String"/>
+            <arg column="post_id" javaType="java.lang.String"/>
+            <arg column="author_id" javaType="java.lang.String"/>
+            <arg column="author_username" javaType="java.lang.String"/>
+            <arg column="author_display_name" javaType="java.lang.String"/>
+            <arg column="parent_id" javaType="java.lang.String"/>
+            <arg column="root_id" javaType="java.lang.String"/>
+            <arg column="depth" javaType="_int"/>
+            <arg column="content" javaType="java.lang.String"/>
+            <arg column="status" javaType="java.lang.String"/>
+            <arg column="like_count" javaType="_long"/>
+            <arg column="created_at" javaType="java.time.Instant"/>
+            <arg column="updated_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="reportViewMap" type="com.petassistant.business.data.dto.internal.CommunityReportView">
+        <constructor>
+            <idArg column="id" javaType="java.lang.String"/>
+            <arg column="reporter_id" javaType="java.lang.String"/>
+            <arg column="reporter_username" javaType="java.lang.String"/>
+            <arg column="target_type" javaType="java.lang.String"/>
+            <arg column="target_id" javaType="java.lang.String"/>
+            <arg column="reason_type" javaType="java.lang.String"/>
+            <arg column="description" javaType="java.lang.String"/>
+            <arg column="status" javaType="java.lang.String"/>
+            <arg column="resolution" javaType="java.lang.String"/>
+            <arg column="moderator_id" javaType="java.lang.String"/>
+            <arg column="moderator_username" javaType="java.lang.String"/>
+            <arg column="moderator_note" javaType="java.lang.String"/>
+            <arg column="version" javaType="_int"/>
+            <arg column="created_at" javaType="java.time.Instant"/>
+            <arg column="resolved_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+
+    <select id="existsPublicPost" resultType="boolean">
+        SELECT EXISTS(SELECT 1 FROM community_post WHERE id = #{postId} AND status = 'PUBLISHED')
+    </select>
+
+    <insert id="insertLike">
+        INSERT IGNORE INTO community_post_like (post_id, user_id, created_at)
+        VALUES (#{postId}, #{userId}, #{createdAt})
+    </insert>
+    <delete id="deleteLike">
+        DELETE FROM community_post_like WHERE post_id = #{postId} AND user_id = #{userId}
+    </delete>
+    <select id="existsLike" resultType="boolean">
+        SELECT EXISTS(SELECT 1 FROM community_post_like WHERE post_id = #{postId} AND user_id = #{userId})
+    </select>
+    <select id="countLikes" resultType="long">
+        SELECT COUNT(*) FROM community_post_like WHERE post_id = #{postId}
+    </select>
+    <update id="synchronizeLikeCount">
+        UPDATE community_post p
+        SET p.like_count = (SELECT COUNT(*) FROM community_post_like l WHERE l.post_id = p.id)
+        WHERE p.id = #{postId}
+    </update>
+
+    <insert id="insertFavorite">
+        INSERT IGNORE INTO community_post_favorite (post_id, user_id, created_at)
+        VALUES (#{postId}, #{userId}, #{createdAt})
+    </insert>
+    <delete id="deleteFavorite">
+        DELETE FROM community_post_favorite WHERE post_id = #{postId} AND user_id = #{userId}
+    </delete>
+    <select id="existsFavorite" resultType="boolean">
+        SELECT EXISTS(SELECT 1 FROM community_post_favorite WHERE post_id = #{postId} AND user_id = #{userId})
+    </select>
+    <select id="countFavorites" resultType="long">
+        SELECT COUNT(*) FROM community_post_favorite WHERE post_id = #{postId}
+    </select>
+    <update id="synchronizeFavoriteCount">
+        UPDATE community_post p
+        SET p.favorite_count = (SELECT COUNT(*) FROM community_post_favorite f WHERE f.post_id = p.id)
+        WHERE p.id = #{postId}
+    </update>
+
+    <insert id="insertFollow">
+        INSERT IGNORE INTO community_user_follow (follower_id, followed_id, created_at)
+        VALUES (#{followerId}, #{followedId}, #{createdAt})
+    </insert>
+    <delete id="deleteFollow">
+        DELETE FROM community_user_follow WHERE follower_id = #{followerId} AND followed_id = #{followedId}
+    </delete>
+    <select id="existsFollow" resultType="boolean">
+        SELECT EXISTS(SELECT 1 FROM community_user_follow WHERE follower_id = #{followerId} AND followed_id = #{followedId})
+    </select>
+    <select id="countFollowers" resultType="long">
+        SELECT COUNT(*) FROM community_user_follow WHERE followed_id = #{followedId}
+    </select>
+    <select id="countFollowing" resultType="long">
+        SELECT COUNT(*) FROM community_user_follow WHERE follower_id = #{followerId}
+    </select>
+    <select id="findFollowers" resultType="com.petassistant.business.data.dto.internal.PublicUserSummaryView">
+        SELECT u.id, u.username, u.display_name, u.avatar_url, u.bio, u.region,
+               EXISTS(SELECT 1 FROM community_user_follow mine
+                      WHERE mine.follower_id = #{viewerId} AND mine.followed_id = u.id) AS viewer_following
+        FROM community_user_follow relation
+        JOIN app_user u ON u.id = relation.follower_id AND u.status = 'ACTIVE'
+        WHERE relation.followed_id = #{userId}
+        ORDER BY relation.created_at DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+    <select id="findFollowing" resultType="com.petassistant.business.data.dto.internal.PublicUserSummaryView">
+        SELECT u.id, u.username, u.display_name, u.avatar_url, u.bio, u.region,
+               EXISTS(SELECT 1 FROM community_user_follow mine
+                      WHERE mine.follower_id = #{viewerId} AND mine.followed_id = u.id) AS viewer_following
+        FROM community_user_follow relation
+        JOIN app_user u ON u.id = relation.followed_id AND u.status = 'ACTIVE'
+        WHERE relation.follower_id = #{userId}
+        ORDER BY relation.created_at DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="findLikedPostIds" resultType="string">
+        SELECT post_id FROM community_post_like WHERE user_id = #{userId} AND post_id IN
+        <foreach collection="postIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+    </select>
+    <select id="findFavoritePostIds" resultType="string">
+        SELECT post_id FROM community_post_favorite WHERE user_id = #{userId} AND post_id IN
+        <foreach collection="postIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+    </select>
+    <select id="findFollowedUserIds" resultType="string">
+        SELECT followed_id FROM community_user_follow WHERE follower_id = #{userId} AND followed_id IN
+        <foreach collection="authorIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+    </select>
+
+    <insert id="insertComment">
+        INSERT INTO community_comment
+            (id, post_id, author_id, parent_id, root_id, depth, content, status, like_count, created_at, updated_at)
+        VALUES
+            (#{id}, #{postId}, #{authorId}, #{parentId}, #{rootId}, #{depth}, #{content}, #{status},
+             #{likeCount}, #{createdAt}, #{updatedAt})
+    </insert>
+    <sql id="commentViewColumns">
+        c.id, c.post_id, c.author_id, u.username AS author_username,
+        u.display_name AS author_display_name, c.parent_id, c.root_id, c.depth,
+        c.content, c.status, c.like_count, c.created_at, c.updated_at
+    </sql>
+    <select id="findComment" resultMap="commentViewMap">
+        SELECT <include refid="commentViewColumns"/>
+        FROM community_comment c JOIN app_user u ON u.id = c.author_id
+        WHERE c.id = #{commentId} AND c.status != 'DELETED'
+    </select>
+    <select id="findComments" resultMap="commentViewMap">
+        SELECT <include refid="commentViewColumns"/>
+        FROM community_comment c JOIN app_user u ON u.id = c.author_id
+        WHERE c.post_id = #{postId} AND c.status = 'PUBLISHED'
+        ORDER BY COALESCE(c.root_id, c.id), c.depth, c.created_at
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+    <select id="countComments" resultType="long">
+        SELECT COUNT(*) FROM community_comment WHERE post_id = #{postId} AND status = 'PUBLISHED'
+    </select>
+    <update id="softDeleteComment">
+        UPDATE community_comment SET status = 'DELETED', updated_at = #{updatedAt}
+        WHERE id = #{commentId} AND author_id = #{authorId} AND status = 'PUBLISHED'
+    </update>
+    <update id="synchronizeCommentCount">
+        UPDATE community_post p
+        SET p.comment_count = (
+            SELECT COUNT(*) FROM community_comment c WHERE c.post_id = p.id AND c.status = 'PUBLISHED'
+        )
+        WHERE p.id = #{postId}
+    </update>
+
+    <insert id="insertReport">
+        INSERT INTO community_report
+            (id, reporter_id, target_type, target_id, reason_type, description, status, resolution,
+             moderator_id, moderator_note, version, created_at, resolved_at)
+        VALUES
+            (#{id}, #{reporterId}, #{targetType}, #{targetId}, #{reasonType}, #{description}, #{status},
+             #{resolution}, #{moderatorId}, #{moderatorNote}, #{version}, #{createdAt}, #{resolvedAt})
+    </insert>
+    <sql id="reportViewColumns">
+        r.id, r.reporter_id, reporter.username AS reporter_username, r.target_type, r.target_id,
+        r.reason_type, r.description, r.status, r.resolution, r.moderator_id,
+        moderator.username AS moderator_username, r.moderator_note, r.version, r.created_at, r.resolved_at
+    </sql>
+    <select id="findReport" resultMap="reportViewMap">
+        SELECT <include refid="reportViewColumns"/>
+        FROM community_report r
+        JOIN app_user reporter ON reporter.id = r.reporter_id
+        LEFT JOIN app_user moderator ON moderator.id = r.moderator_id
+        WHERE r.id = #{reportId}
+    </select>
+    <select id="findReportPage" resultMap="reportViewMap">
+        SELECT <include refid="reportViewColumns"/>
+        FROM community_report r
+        JOIN app_user reporter ON reporter.id = r.reporter_id
+        LEFT JOIN app_user moderator ON moderator.id = r.moderator_id
+        <if test="status != null and status != ''">WHERE r.status = #{status}</if>
+        ORDER BY CASE WHEN r.status = 'PENDING' THEN 0 ELSE 1 END, r.created_at
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+    <select id="countReports" resultType="long">
+        SELECT COUNT(*) FROM community_report
+        <if test="status != null and status != ''">WHERE status = #{status}</if>
+    </select>
+    <update id="moderateReport">
+        UPDATE community_report
+        SET status = 'RESOLVED', resolution = #{resolution}, moderator_id = #{moderatorId},
+            moderator_note = #{moderatorNote}, version = version + 1, resolved_at = #{resolvedAt}
+        WHERE id = #{reportId} AND status = 'PENDING' AND version = #{expectedVersion}
+    </update>
+    <update id="hidePost">
+        UPDATE community_post SET status = 'HIDDEN', version = version + 1, updated_at = #{updatedAt}
+        WHERE id = #{postId} AND status = 'PUBLISHED'
+    </update>
+    <update id="hideComment">
+        UPDATE community_comment SET status = 'HIDDEN', updated_at = #{updatedAt}
+        WHERE id = #{commentId} AND status = 'PUBLISHED'
+    </update>
+
+    <insert id="insertCheckIn">
+        INSERT IGNORE INTO community_checkin (user_id, checkin_date, created_at)
+        VALUES (#{userId}, #{date}, #{createdAt})
+    </insert>
+    <select id="findCheckInDates" resultType="java.time.LocalDate">
+        SELECT checkin_date FROM community_checkin
+        WHERE user_id = #{userId} AND checkin_date BETWEEN #{start} AND #{end}
+        ORDER BY checkin_date
+    </select>
+    <select id="countPendingReports" resultType="long">
+        SELECT COUNT(*) FROM community_report WHERE status = 'PENDING'
+    </select>
+</mapper>

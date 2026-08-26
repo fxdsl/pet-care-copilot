@@ -1,0 +1,181 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.petassistant.business.data.mapper.KnowledgeMapper">
+
+    <!-- 去重投影同时读取当前模型，模型升级时完整重建旧分块。 -->
+    <resultMap id="documentProjectionMap" type="com.petassistant.business.data.dto.internal.KnowledgeDocumentProjection">
+        <constructor>
+            <idArg column="id" javaType="java.lang.String"/>
+            <arg column="title" javaType="java.lang.String"/>
+            <arg column="checksum" javaType="java.lang.String"/>
+            <arg column="chunk_count" javaType="_int"/>
+            <arg column="embedded_chunk_count" javaType="_int"/>
+            <arg column="embedding_model" javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="documentSummaryMap" type="com.petassistant.business.data.dto.response.KnowledgeDocumentSummaryResponse">
+        <constructor>
+            <idArg column="id" javaType="java.lang.String"/>
+            <arg column="title" javaType="java.lang.String"/>
+            <arg column="source_name" javaType="java.lang.String"/>
+            <arg column="file_name" javaType="java.lang.String"/>
+            <arg column="document_type" javaType="java.lang.String"/>
+            <arg column="pet_type" javaType="java.lang.String"/>
+            <arg column="category" javaType="java.lang.String"/>
+            <arg column="status" javaType="java.lang.String"/>
+            <arg column="chunk_count" javaType="_int"/>
+            <arg column="embedded_chunk_count" javaType="_int"/>
+            <arg column="embedding_model" javaType="java.lang.String"/>
+            <arg column="created_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="agentCandidateMap" type="com.petassistant.business.data.dto.internal.AgentCandidateRow">
+        <constructor>
+            <idArg column="chunk_id" javaType="java.lang.String"/>
+            <arg column="document_id" javaType="java.lang.String"/>
+            <arg column="title" javaType="java.lang.String"/>
+            <arg column="source_name" javaType="java.lang.String"/>
+            <arg column="source_url" javaType="java.lang.String"/>
+            <arg column="file_name" javaType="java.lang.String"/>
+            <arg column="pet_type" javaType="java.lang.String"/>
+            <arg column="category" javaType="java.lang.String"/>
+            <arg column="chunk_index" javaType="_int"/>
+            <arg column="content" javaType="java.lang.String"/>
+            <arg column="embedding_json" javaType="java.lang.String"/>
+            <arg column="embedding_model" javaType="java.lang.String"/>
+            <arg column="page_start" javaType="java.lang.Integer"/>
+            <arg column="page_end" javaType="java.lang.Integer"/>
+        </constructor>
+    </resultMap>
+
+    <select id="findByChecksum" resultMap="documentProjectionMap">
+        SELECT d.id,
+               d.title,
+               d.content_checksum AS checksum,
+               COUNT(c.id) AS chunk_count,
+               COALESCE(SUM(CASE WHEN c.embedding_json IS NOT NULL THEN 1 ELSE 0 END), 0) AS embedded_chunk_count,
+               MAX(c.embedding_model) AS embedding_model
+        FROM knowledge_document d
+        LEFT JOIN knowledge_chunk c ON c.document_id = d.id
+        WHERE d.content_checksum = #{checksum}
+        GROUP BY d.id, d.title, d.content_checksum
+    </select>
+
+    <!-- 只有审核状态机进入 PUBLISHING 后才调用本语句，READY 即代表允许召回。 -->
+    <insert id="insertPublishedDocument">
+        INSERT INTO knowledge_document
+            (id, submission_id, title, source_type, source_business_id, source_url, source_name,
+             source_author, author_user_id, file_name, document_type, pet_type, category, language_code,
+             content, content_checksum, status, review_status, trust_level, quality_score, consent_status,
+             reviewer_user_id, reviewed_at, version, published_at, expires_at, created_at, updated_at)
+        VALUES
+            (#{id}, #{submissionId}, #{title}, #{sourceType}, #{sourceBusinessId}, #{sourceUrl}, #{sourceName},
+             #{sourceAuthor}, #{authorUserId}, #{fileName}, #{documentType}, #{petType}, #{category}, 'zh-CN',
+             #{content}, #{contentChecksum}, 'READY', 'APPROVED', #{trustLevel}, #{qualityScore}, #{consentStatus},
+             #{reviewerUserId}, #{reviewedAt}, #{version}, #{publishedAt}, #{expiresAt}, #{publishedAt}, #{publishedAt})
+    </insert>
+
+    <update id="supersedePublishedBySubmission">
+        UPDATE knowledge_document SET status = 'SUPERSEDED', updated_at = #{updatedAt}
+        WHERE submission_id = #{submissionId} AND status = 'READY'
+    </update>
+
+    <update id="withdrawPublishedBySubmission">
+        UPDATE knowledge_document SET status = 'WITHDRAWN', consent_status = 'WITHDRAWN', updated_at = #{updatedAt}
+        WHERE submission_id = #{submissionId} AND status = 'READY'
+    </update>
+
+    <!-- 单条 INSERT 批量写入分块，确保文档与全部分块处于同一 Spring 事务。 -->
+    <insert id="insertChunks">
+        INSERT INTO knowledge_chunk
+            (id, document_id, chunk_index, content, char_count, token_estimate,
+             embedding_json, embedding_model, embedding_dimensions, page_start, page_end, embedded_at, created_at)
+        VALUES
+        <foreach collection="chunks" item="chunk" separator=",">
+            (#{chunk.id}, #{chunk.documentId}, #{chunk.chunkIndex}, #{chunk.content},
+             #{chunk.charCount}, #{chunk.tokenEstimate}, #{chunk.embeddingJson},
+             #{chunk.embeddingModel}, #{chunk.embeddingDimensions}, #{chunk.pageStart}, #{chunk.pageEnd},
+             #{chunk.embeddedAt}, #{chunk.createdAt})
+        </foreach>
+    </insert>
+
+    <delete id="deleteChunksByDocumentId">
+        DELETE FROM knowledge_chunk WHERE document_id = #{documentId}
+    </delete>
+
+    <select id="findRecent" resultMap="documentSummaryMap">
+        SELECT d.id,
+               d.title,
+               d.source_name,
+               d.file_name,
+               d.document_type,
+               d.pet_type,
+               d.category,
+               d.status,
+               COUNT(c.id) AS chunk_count,
+               COALESCE(SUM(CASE WHEN c.embedding_json IS NOT NULL THEN 1 ELSE 0 END), 0) AS embedded_chunk_count,
+               MAX(c.embedding_model) AS embedding_model,
+               d.created_at
+        FROM knowledge_document d
+        LEFT JOIN knowledge_chunk c ON c.document_id = d.id
+        GROUP BY d.id, d.title, d.source_name, d.file_name, d.document_type,
+                 d.pet_type, d.category, d.status, d.created_at
+        ORDER BY d.created_at DESC
+        LIMIT #{limit}
+    </select>
+
+    <!-- 重建只读取文档正文与元数据，不复用旧分块或旧向量。 -->
+    <select id="findAllForReindex" resultType="com.petassistant.business.data.dto.internal.KnowledgeReindexDocument">
+        SELECT id,
+               title,
+               source_url AS sourceUrl,
+               source_name AS sourceName,
+               file_name AS fileName,
+               document_type AS documentType,
+               pet_type AS petType,
+               category,
+               content
+        FROM knowledge_document
+        WHERE status = 'READY' AND review_status = 'APPROVED'
+          AND consent_status != 'WITHDRAWN'
+          AND (expires_at IS NULL OR expires_at &gt; CURRENT_TIMESTAMP(6))
+        ORDER BY created_at, id
+    </select>
+
+    <!-- MySQL 负责元数据过滤，FastAPI 对这些候选执行真正的向量相似度排序。 -->
+    <select id="findAgentCandidates" resultMap="agentCandidateMap">
+        SELECT c.id AS chunk_id,
+               c.document_id,
+               d.title,
+               d.source_name,
+               d.source_url,
+               d.file_name,
+               d.pet_type,
+               d.category,
+               c.chunk_index,
+               c.content,
+               CAST(c.embedding_json AS CHAR) AS embedding_json,
+               c.embedding_model,
+               c.page_start,
+               c.page_end
+        FROM knowledge_chunk c
+        INNER JOIN knowledge_document d ON d.id = c.document_id
+        WHERE d.status = 'READY'
+          AND d.review_status = 'APPROVED'
+          AND d.consent_status != 'WITHDRAWN'
+          AND (d.expires_at IS NULL OR d.expires_at &gt; CURRENT_TIMESTAMP(6))
+          AND c.embedding_json IS NOT NULL
+        <if test="petType != null and petType != ''">
+            AND d.pet_type = #{petType}
+        </if>
+        <if test="category != null and category != ''">
+            AND d.category = #{category}
+        </if>
+        ORDER BY d.created_at DESC, c.chunk_index
+        LIMIT #{limit}
+    </select>
+</mapper>

@@ -1,0 +1,31 @@
+{
+  "documents": [
+    {
+      "id": "kitten-feeding",
+      "text": "两到三月龄幼猫胃容量较小，通常适合每天四餐左右的少量多餐，并根据体重和猫粮热量调整总量。"
+    },
+    {
+      "id": "dog-vaccine",
+      "text": "幼犬核心疫苗通常需要按当地兽医制定的程序完成基础免疫，接种时间与年龄、既往免疫和健康状态有关。"
+    },
+    {
+      "id": "cat-water",
+      "text": "猫咪应随时获得清洁饮水，可使用多个水碗或流动饮水器，并关注突然增加或减少的饮水量。"
+    },
+    {
+      "id": "grooming",
+      "text": "长毛宠物需要定期梳毛以减少打结和吞入浮毛，发现皮肤红肿、渗出或疼痛时应咨询兽医。"
+    },
+    {
+      "id": "emergency",
+      "text": "宠物出现呼吸困难、持续抽搐、意识异常或严重出血时属于紧急情况，应立即联系急诊兽医。"
+    }
+  ],
+  "cases": [
+    {"question": "三个月的小猫一天吃多少顿？", "expected_document_id": "kitten-feeding"},
+    {"question": "小狗什么时候开始打核心疫苗？", "expected_document_id": "dog-vaccine"},
+    {"question": "怎样让猫多喝一点水？", "expected_document_id": "cat-water"},
+    {"question": "长毛狗毛发打结怎么护理？", "expected_document_id": "grooming"},
+    {"question": "宠物抽搐并且喘不上气怎么办？", "expected_document_id": "emergency"}
+  ]
+}

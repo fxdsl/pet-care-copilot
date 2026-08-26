@@ -1,0 +1,275 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.petassistant.business.data.mapper.CommunityPostMapper">
+
+    <resultMap id="postEntityMap" type="com.petassistant.business.data.entity.CommunityPostEntity">
+        <constructor>
+            <idArg column="id" javaType="java.lang.String"/>
+            <arg column="author_id" javaType="java.lang.String"/>
+            <arg column="pet_profile_id" javaType="java.lang.String"/>
+            <arg column="topic_id" javaType="java.lang.String"/>
+            <arg column="title" javaType="java.lang.String"/>
+            <arg column="content" javaType="java.lang.String"/>
+            <arg column="region" javaType="java.lang.String"/>
+            <arg column="latitude" javaType="java.lang.Double"/>
+            <arg column="longitude" javaType="java.lang.Double"/>
+            <arg column="status" javaType="java.lang.String"/>
+            <arg column="view_count" javaType="_long"/>
+            <arg column="like_count" javaType="_long"/>
+            <arg column="comment_count" javaType="_long"/>
+            <arg column="favorite_count" javaType="_long"/>
+            <arg column="version" javaType="_int"/>
+            <arg column="published_at" javaType="java.time.Instant"/>
+            <arg column="created_at" javaType="java.time.Instant"/>
+            <arg column="updated_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="postViewMap" type="com.petassistant.business.data.dto.internal.CommunityPostView">
+        <constructor>
+            <idArg column="id" javaType="java.lang.String"/>
+            <arg column="author_id" javaType="java.lang.String"/>
+            <arg column="author_username" javaType="java.lang.String"/>
+            <arg column="author_display_name" javaType="java.lang.String"/>
+            <arg column="pet_profile_id" javaType="java.lang.String"/>
+            <arg column="pet_name" javaType="java.lang.String"/>
+            <arg column="topic_id" javaType="java.lang.String"/>
+            <arg column="topic_name" javaType="java.lang.String"/>
+            <arg column="title" javaType="java.lang.String"/>
+            <arg column="content" javaType="java.lang.String"/>
+            <arg column="region" javaType="java.lang.String"/>
+            <arg column="latitude" javaType="java.lang.Double"/>
+            <arg column="longitude" javaType="java.lang.Double"/>
+            <arg column="status" javaType="java.lang.String"/>
+            <arg column="view_count" javaType="_long"/>
+            <arg column="like_count" javaType="_long"/>
+            <arg column="comment_count" javaType="_long"/>
+            <arg column="favorite_count" javaType="_long"/>
+            <arg column="version" javaType="_int"/>
+            <arg column="published_at" javaType="java.time.Instant"/>
+            <arg column="created_at" javaType="java.time.Instant"/>
+            <arg column="updated_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+
+    <sql id="postColumns">
+        id, author_id, pet_profile_id, topic_id, title, content, region, latitude, longitude, status,
+        view_count, like_count, comment_count, favorite_count, version,
+        published_at, created_at, updated_at
+    </sql>
+
+    <sql id="postViewColumns">
+        p.id, p.author_id, u.username AS author_username, u.display_name AS author_display_name,
+        p.pet_profile_id, pet.name AS pet_name, p.topic_id, t.name AS topic_name,
+        p.title, p.content, p.region, p.latitude, p.longitude, p.status, p.view_count, p.like_count,
+        p.comment_count, p.favorite_count, p.version, p.published_at, p.created_at, p.updated_at
+    </sql>
+
+    <insert id="insert">
+        INSERT INTO community_post
+            (id, author_id, pet_profile_id, topic_id, title, content, region, latitude, longitude, status,
+             view_count, like_count, comment_count, favorite_count, version,
+             published_at, created_at, updated_at)
+        VALUES
+            (#{id}, #{authorId}, #{petProfileId}, #{topicId}, #{title}, #{content}, #{region},
+             #{latitude}, #{longitude}, #{status},
+             #{viewCount}, #{likeCount}, #{commentCount}, #{favoriteCount}, #{version},
+             #{publishedAt}, #{createdAt}, #{updatedAt})
+    </insert>
+
+    <select id="findOwnedEntity" resultMap="postEntityMap">
+        SELECT <include refid="postColumns"/> FROM community_post
+        WHERE id = #{id} AND author_id = #{authorId} AND status != 'DELETED'
+    </select>
+
+    <select id="findOwnedView" resultMap="postViewMap">
+        SELECT <include refid="postViewColumns"/>
+        FROM community_post p
+        JOIN app_user u ON u.id = p.author_id
+        LEFT JOIN pet_profile pet ON pet.id = p.pet_profile_id
+        LEFT JOIN community_topic t ON t.id = p.topic_id
+        WHERE p.id = #{id} AND p.author_id = #{authorId} AND p.status != 'DELETED'
+    </select>
+
+    <select id="findPublicView" resultMap="postViewMap">
+        SELECT <include refid="postViewColumns"/>
+        FROM community_post p
+        JOIN app_user u ON u.id = p.author_id
+        LEFT JOIN pet_profile pet ON pet.id = p.pet_profile_id
+        LEFT JOIN community_topic t ON t.id = p.topic_id
+        WHERE p.id = #{id} AND p.status = 'PUBLISHED'
+    </select>
+
+    <sql id="publicFilters">
+        WHERE p.status = 'PUBLISHED'
+        <if test="topicId != null and topicId != ''">AND p.topic_id = #{topicId}</if>
+        <if test="authorId != null and authorId != ''">AND p.author_id = #{authorId}</if>
+    </sql>
+
+    <select id="findPublicPage" resultMap="postViewMap">
+        SELECT <include refid="postViewColumns"/>
+        FROM community_post p
+        JOIN app_user u ON u.id = p.author_id
+        LEFT JOIN pet_profile pet ON pet.id = p.pet_profile_id
+        LEFT JOIN community_topic t ON t.id = p.topic_id
+        <include refid="publicFilters"/>
+        ORDER BY p.published_at DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countPublic" resultType="long">
+        SELECT COUNT(*) FROM community_post p <include refid="publicFilters"/>
+    </select>
+
+    <select id="findMinePage" resultMap="postViewMap">
+        SELECT <include refid="postViewColumns"/>
+        FROM community_post p
+        JOIN app_user u ON u.id = p.author_id
+        LEFT JOIN pet_profile pet ON pet.id = p.pet_profile_id
+        LEFT JOIN community_topic t ON t.id = p.topic_id
+        WHERE p.author_id = #{authorId} AND p.status != 'DELETED'
+        ORDER BY p.updated_at DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countMine" resultType="long">
+        SELECT COUNT(*) FROM community_post WHERE author_id = #{authorId} AND status != 'DELETED'
+    </select>
+
+    <select id="findLikedByUser" resultMap="postViewMap">
+        SELECT <include refid="postViewColumns"/>
+        FROM community_post_like relation
+        JOIN community_post p ON p.id = relation.post_id AND p.status = 'PUBLISHED'
+        JOIN app_user u ON u.id = p.author_id
+        LEFT JOIN pet_profile pet ON pet.id = p.pet_profile_id
+        LEFT JOIN community_topic t ON t.id = p.topic_id
+        WHERE relation.user_id = #{userId}
+        ORDER BY relation.created_at DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countLikedByUser" resultType="long">
+        SELECT COUNT(*) FROM community_post_like relation
+        JOIN community_post p ON p.id = relation.post_id AND p.status = 'PUBLISHED'
+        WHERE relation.user_id = #{userId}
+    </select>
+
+    <select id="findFavoritedByUser" resultMap="postViewMap">
+        SELECT <include refid="postViewColumns"/>
+        FROM community_post_favorite relation
+        JOIN community_post p ON p.id = relation.post_id AND p.status = 'PUBLISHED'
+        JOIN app_user u ON u.id = p.author_id
+        LEFT JOIN pet_profile pet ON pet.id = p.pet_profile_id
+        LEFT JOIN community_topic t ON t.id = p.topic_id
+        WHERE relation.user_id = #{userId}
+        ORDER BY relation.created_at DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countFavoritedByUser" resultType="long">
+        SELECT COUNT(*) FROM community_post_favorite relation
+        JOIN community_post p ON p.id = relation.post_id AND p.status = 'PUBLISHED'
+        WHERE relation.user_id = #{userId}
+    </select>
+
+    <update id="updateOwned">
+        UPDATE community_post
+        SET title = #{title}, content = #{content}, pet_profile_id = #{petProfileId},
+            topic_id = #{topicId}, region = #{region}, latitude = #{latitude}, longitude = #{longitude},
+            version = version + 1, updated_at = #{updatedAt}
+        WHERE id = #{id} AND author_id = #{authorId} AND status != 'DELETED' AND version = #{expectedVersion}
+    </update>
+
+    <update id="publishOwned">
+        UPDATE community_post
+        SET status = 'PUBLISHED', published_at = COALESCE(published_at, #{publishedAt}),
+            version = version + 1, updated_at = #{publishedAt}
+        WHERE id = #{id} AND author_id = #{authorId} AND status IN ('DRAFT', 'PENDING_REVIEW', 'PUBLISHED')
+    </update>
+
+    <update id="softDeleteOwned">
+        UPDATE community_post
+        SET status = 'DELETED', version = version + 1, updated_at = #{updatedAt}
+        WHERE id = #{id} AND author_id = #{authorId} AND status != 'DELETED'
+    </update>
+
+    <update id="addViews">
+        UPDATE community_post SET view_count = view_count + #{delta} WHERE id = #{id} AND status = 'PUBLISHED'
+    </update>
+
+    <select id="findAllPublishedIds" resultType="string">
+        SELECT id FROM community_post WHERE status = 'PUBLISHED'
+    </select>
+
+    <select id="findFollowingPage" resultMap="postViewMap">
+        SELECT <include refid="postViewColumns"/>
+        FROM community_post p
+        JOIN community_user_follow f ON f.followed_id = p.author_id AND f.follower_id = #{userId}
+        JOIN app_user u ON u.id = p.author_id
+        LEFT JOIN pet_profile pet ON pet.id = p.pet_profile_id
+        LEFT JOIN community_topic t ON t.id = p.topic_id
+        WHERE p.status = 'PUBLISHED'
+        <if test="topicId != null and topicId != ''">AND p.topic_id = #{topicId}</if>
+        ORDER BY p.published_at DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countFollowing" resultType="long">
+        SELECT COUNT(*)
+        FROM community_post p
+        JOIN community_user_follow f ON f.followed_id = p.author_id AND f.follower_id = #{userId}
+        WHERE p.status = 'PUBLISHED'
+        <if test="topicId != null and topicId != ''">AND p.topic_id = #{topicId}</if>
+    </select>
+
+    <select id="findHotCandidates" resultMap="postViewMap">
+        SELECT <include refid="postViewColumns"/>
+        FROM community_post p
+        JOIN app_user u ON u.id = p.author_id
+        LEFT JOIN pet_profile pet ON pet.id = p.pet_profile_id
+        LEFT JOIN community_topic t ON t.id = p.topic_id
+        WHERE p.status = 'PUBLISHED'
+        ORDER BY p.published_at DESC
+        LIMIT #{limit}
+    </select>
+
+    <select id="findPublicByIds" resultMap="postViewMap">
+        SELECT <include refid="postViewColumns"/>
+        FROM community_post p
+        JOIN app_user u ON u.id = p.author_id
+        LEFT JOIN pet_profile pet ON pet.id = p.pet_profile_id
+        LEFT JOIN community_topic t ON t.id = p.topic_id
+        WHERE p.status = 'PUBLISHED' AND p.id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+    </select>
+
+    <select id="findNearby" resultMap="postViewMap">
+        SELECT <include refid="postViewColumns"/>
+        FROM community_post p
+        JOIN app_user u ON u.id = p.author_id
+        LEFT JOIN pet_profile pet ON pet.id = p.pet_profile_id
+        LEFT JOIN community_topic t ON t.id = p.topic_id
+        WHERE p.status = 'PUBLISHED' AND p.latitude IS NOT NULL AND p.longitude IS NOT NULL
+          <if test="topicId != null">AND p.topic_id = #{topicId}</if>
+          AND ST_Distance_Sphere(POINT(p.longitude, p.latitude), POINT(#{longitude}, #{latitude})) &lt;= #{radiusKm} * 1000
+        ORDER BY ST_Distance_Sphere(POINT(p.longitude, p.latitude), POINT(#{longitude}, #{latitude}))
+        LIMIT #{limit}
+    </select>
+
+    <select id="findPublishedWithLocation" resultMap="postViewMap">
+        SELECT <include refid="postViewColumns"/>
+        FROM community_post p
+        JOIN app_user u ON u.id = p.author_id
+        LEFT JOIN pet_profile pet ON pet.id = p.pet_profile_id
+        LEFT JOIN community_topic t ON t.id = p.topic_id
+        WHERE p.status = 'PUBLISHED' AND p.latitude IS NOT NULL AND p.longitude IS NOT NULL
+    </select>
+
+    <select id="existsActiveTopic" resultType="boolean">
+        SELECT EXISTS(SELECT 1 FROM community_topic WHERE id = #{id} AND status = 'ACTIVE')
+    </select>
+
+    <select id="findActiveTopics" resultType="com.petassistant.business.data.dto.response.CommunityTopicResponse">
+        SELECT id, name, description FROM community_topic WHERE status = 'ACTIVE' ORDER BY created_at
+    </select>
+</mapper>

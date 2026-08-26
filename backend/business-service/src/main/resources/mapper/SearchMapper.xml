@@ -1,0 +1,250 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.petassistant.business.data.mapper.SearchMapper">
+
+    <resultMap id="searchSourceMap" type="com.petassistant.business.data.dto.internal.SearchSourceDocument">
+        <constructor>
+            <idArg column="id" javaType="java.lang.String"/>
+            <arg column="document_type" javaType="java.lang.String"/>
+            <arg column="title" javaType="java.lang.String"/>
+            <arg column="content" javaType="java.lang.String"/>
+            <arg column="author_name" javaType="java.lang.String"/>
+            <arg column="avatar_url" javaType="java.lang.String"/>
+            <arg column="source_url" javaType="java.lang.String"/>
+            <arg column="pet_type" javaType="java.lang.String"/>
+            <arg column="category" javaType="java.lang.String"/>
+            <arg column="trust_level" javaType="java.lang.String"/>
+            <arg column="published_at" javaType="java.time.Instant"/>
+            <arg column="route_path" javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="historyMap" type="com.petassistant.business.data.entity.SearchHistoryEntity">
+        <constructor>
+            <idArg column="id" javaType="java.lang.String"/>
+            <arg column="user_id" javaType="java.lang.String"/>
+            <arg column="query_text" javaType="java.lang.String"/>
+            <arg column="normalized_query" javaType="java.lang.String"/>
+            <arg column="query_hash" javaType="java.lang.String"/>
+            <arg column="filters_json" javaType="java.lang.String"/>
+            <arg column="result_count" javaType="_long"/>
+            <arg column="search_count" javaType="_int"/>
+            <arg column="last_searched_at" javaType="java.time.Instant"/>
+            <arg column="created_at" javaType="java.time.Instant"/>
+            <arg column="updated_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="jobMap" type="com.petassistant.business.data.entity.SearchIndexJobEntity">
+        <constructor>
+            <idArg column="id" javaType="java.lang.String"/>
+            <arg column="requested_by" javaType="java.lang.String"/>
+            <arg column="index_name" javaType="java.lang.String"/>
+            <arg column="index_version" javaType="_long"/>
+            <arg column="status" javaType="java.lang.String"/>
+            <arg column="total_count" javaType="_int"/>
+            <arg column="indexed_count" javaType="_int"/>
+            <arg column="failed_count" javaType="_int"/>
+            <arg column="error_message" javaType="java.lang.String"/>
+            <arg column="started_at" javaType="java.time.Instant"/>
+            <arg column="completed_at" javaType="java.time.Instant"/>
+            <arg column="created_at" javaType="java.time.Instant"/>
+            <arg column="updated_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+
+    <sql id="publicSearchUnion">
+        SELECT p.id, 'POST' AS document_type, p.title, p.content,
+               u.display_name AS author_name, u.avatar_url, NULL AS source_url,
+               pet.pet_type, NULL AS category, NULL AS trust_level,
+               p.published_at, CONCAT('/app/community?post=', p.id) AS route_path
+        FROM community_post p
+        JOIN app_user u ON u.id = p.author_id AND u.status = 'ACTIVE'
+        LEFT JOIN pet_profile pet ON pet.id = p.pet_profile_id
+        WHERE p.status = 'PUBLISHED'
+        UNION ALL
+        SELECT d.id, 'KNOWLEDGE' AS document_type, d.title, d.content,
+               COALESCE(d.source_author, d.source_name) AS author_name, NULL AS avatar_url,
+               d.source_url, d.pet_type, d.category, d.trust_level,
+               d.published_at, CONCAT('/app/chat?source=', d.id) AS route_path
+        FROM knowledge_document d
+        WHERE d.status = 'READY' AND d.review_status = 'APPROVED'
+          AND d.consent_status != 'WITHDRAWN'
+          AND (d.expires_at IS NULL OR d.expires_at &gt; CURRENT_TIMESTAMP(6))
+        UNION ALL
+        SELECT u.id, 'USER' AS document_type, u.display_name AS title,
+               COALESCE(u.bio, '') AS content, CONCAT('@', u.username) AS author_name,
+               u.avatar_url, NULL AS source_url, NULL AS pet_type, NULL AS category,
+               NULL AS trust_level, u.created_at AS published_at,
+               CONCAT('/app/users/', u.id) AS route_path
+        FROM app_user u
+        WHERE u.status = 'ACTIVE' AND u.role IN ('USER', 'VERIFIED_SELLER')
+        UNION ALL
+        SELECT t.id, 'TOPIC' AS document_type, t.name AS title,
+               COALESCE(t.description, '') AS content, '社区话题' AS author_name,
+               NULL AS avatar_url, NULL AS source_url, NULL AS pet_type,
+               NULL AS category, NULL AS trust_level, t.created_at AS published_at,
+               CONCAT('/app/community?topic=', t.id) AS route_path
+        FROM community_topic t
+        WHERE t.status = 'ACTIVE'
+    </sql>
+
+    <sql id="fallbackFilters">
+        WHERE (source.title LIKE CONCAT('%', #{keyword}, '%')
+            OR source.content LIKE CONCAT('%', #{keyword}, '%')
+            OR source.author_name LIKE CONCAT('%', #{keyword}, '%'))
+        <if test="type != null and type != 'ALL'">AND source.document_type = #{type}</if>
+        <if test="petType != null and petType != ''">AND source.pet_type = #{petType}</if>
+        <if test="category != null and category != ''">AND source.category = #{category}</if>
+        <if test="trustLevel != null and trustLevel != ''">AND source.trust_level = #{trustLevel}</if>
+        <if test="publishedAfter != null">AND source.published_at &gt;= #{publishedAfter}</if>
+    </sql>
+
+    <select id="findFallback" resultMap="searchSourceMap">
+        SELECT source.* FROM (<include refid="publicSearchUnion"/>) source
+        <include refid="fallbackFilters"/>
+        <choose>
+            <when test="sort == 'LATEST'">ORDER BY source.published_at DESC</when>
+            <otherwise>
+                ORDER BY (source.title = #{keyword}) DESC,
+                         (source.title LIKE CONCAT(#{keyword}, '%')) DESC,
+                         source.published_at DESC
+            </otherwise>
+        </choose>
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countFallback" resultType="long">
+        SELECT COUNT(*) FROM (<include refid="publicSearchUnion"/>) source
+        <include refid="fallbackFilters"/>
+    </select>
+
+    <select id="findSuggestions" resultType="string">
+        SELECT candidate FROM (
+            SELECT p.title AS candidate FROM community_post p
+            WHERE p.status = 'PUBLISHED' AND p.title LIKE CONCAT(#{keyword}, '%')
+            UNION
+            SELECT d.title FROM knowledge_document d
+            WHERE d.status = 'READY' AND d.review_status = 'APPROVED'
+              AND d.consent_status != 'WITHDRAWN'
+              AND (d.expires_at IS NULL OR d.expires_at &gt; CURRENT_TIMESTAMP(6))
+              AND d.title LIKE CONCAT(#{keyword}, '%')
+            UNION
+            SELECT u.display_name FROM app_user u
+            WHERE u.status = 'ACTIVE' AND u.role IN ('USER', 'VERIFIED_SELLER')
+              AND u.display_name LIKE CONCAT(#{keyword}, '%')
+            UNION
+            SELECT t.name FROM community_topic t
+            WHERE t.status = 'ACTIVE' AND t.name LIKE CONCAT(#{keyword}, '%')
+        ) suggestions
+        ORDER BY CHAR_LENGTH(candidate), candidate
+        LIMIT #{limit}
+    </select>
+
+    <select id="findPostDocument" resultMap="searchSourceMap">
+        SELECT p.id, 'POST' AS document_type, p.title, p.content,
+               u.display_name AS author_name, u.avatar_url, NULL AS source_url,
+               pet.pet_type, NULL AS category, NULL AS trust_level,
+               p.published_at, CONCAT('/app/community?post=', p.id) AS route_path
+        FROM community_post p JOIN app_user u ON u.id = p.author_id AND u.status = 'ACTIVE'
+        LEFT JOIN pet_profile pet ON pet.id = p.pet_profile_id
+        WHERE p.id = #{id} AND p.status = 'PUBLISHED'
+    </select>
+
+    <select id="findKnowledgeDocument" resultMap="searchSourceMap">
+        SELECT d.id, 'KNOWLEDGE' AS document_type, d.title, d.content,
+               COALESCE(d.source_author, d.source_name) AS author_name, NULL AS avatar_url,
+               d.source_url, d.pet_type, d.category, d.trust_level, d.published_at,
+               CONCAT('/app/chat?source=', d.id) AS route_path
+        FROM knowledge_document d
+        WHERE d.id = #{id} AND d.status = 'READY' AND d.review_status = 'APPROVED'
+          AND d.consent_status != 'WITHDRAWN'
+          AND (d.expires_at IS NULL OR d.expires_at &gt; CURRENT_TIMESTAMP(6))
+    </select>
+
+    <select id="findUserDocument" resultMap="searchSourceMap">
+        SELECT u.id, 'USER' AS document_type, u.display_name AS title,
+               COALESCE(u.bio, '') AS content, CONCAT('@', u.username) AS author_name,
+               u.avatar_url, NULL AS source_url, NULL AS pet_type, NULL AS category,
+               NULL AS trust_level, u.created_at AS published_at,
+               CONCAT('/app/users/', u.id) AS route_path
+        FROM app_user u
+        WHERE u.id = #{id} AND u.status = 'ACTIVE' AND u.role IN ('USER', 'VERIFIED_SELLER')
+    </select>
+
+    <select id="findTopicDocument" resultMap="searchSourceMap">
+        SELECT t.id, 'TOPIC' AS document_type, t.name AS title,
+               COALESCE(t.description, '') AS content, '社区话题' AS author_name,
+               NULL AS avatar_url, NULL AS source_url, NULL AS pet_type,
+               NULL AS category, NULL AS trust_level, t.created_at AS published_at,
+               CONCAT('/app/community?topic=', t.id) AS route_path
+        FROM community_topic t WHERE t.id = #{id} AND t.status = 'ACTIVE'
+    </select>
+
+    <select id="findAllPublicDocuments" resultMap="searchSourceMap">
+        SELECT source.* FROM (<include refid="publicSearchUnion"/>) source
+        ORDER BY source.document_type, source.id
+    </select>
+
+    <insert id="upsertHistory">
+        INSERT INTO search_history
+            (id, user_id, query_text, normalized_query, query_hash, filters_json,
+             result_count, search_count, last_searched_at, created_at, updated_at)
+        VALUES
+            (#{id}, #{userId}, #{queryText}, #{normalizedQuery}, #{queryHash}, #{filtersJson},
+             #{resultCount}, #{searchCount}, #{lastSearchedAt}, #{createdAt}, #{updatedAt})
+        ON DUPLICATE KEY UPDATE
+            query_text = VALUES(query_text), normalized_query = VALUES(normalized_query),
+            filters_json = VALUES(filters_json), result_count = VALUES(result_count),
+            search_count = search_count + 1, last_searched_at = VALUES(last_searched_at),
+            updated_at = VALUES(updated_at)
+    </insert>
+
+    <select id="findHistory" resultMap="historyMap">
+        SELECT id, user_id, query_text, normalized_query, query_hash, filters_json,
+               result_count, search_count, last_searched_at, created_at, updated_at
+        FROM search_history WHERE user_id = #{userId}
+        ORDER BY last_searched_at DESC LIMIT #{limit}
+    </select>
+
+    <delete id="deleteHistory">
+        DELETE FROM search_history WHERE id = #{id} AND user_id = #{userId}
+    </delete>
+
+    <delete id="deleteAllHistory">DELETE FROM search_history WHERE user_id = #{userId}</delete>
+
+    <insert id="insertJob">
+        INSERT INTO search_index_job
+            (id, requested_by, index_name, index_version, status, total_count, indexed_count,
+             failed_count, error_message, started_at, completed_at, created_at, updated_at)
+        VALUES
+            (#{id}, #{requestedBy}, #{indexName}, #{indexVersion}, #{status}, #{totalCount},
+             #{indexedCount}, #{failedCount}, #{errorMessage}, #{startedAt}, #{completedAt},
+             #{createdAt}, #{updatedAt})
+    </insert>
+
+    <select id="findJob" resultMap="jobMap">
+        SELECT id, requested_by, index_name, index_version, status, total_count, indexed_count,
+               failed_count, error_message, started_at, completed_at, created_at, updated_at
+        FROM search_index_job WHERE id = #{id}
+    </select>
+
+    <update id="startJob">
+        UPDATE search_index_job SET status = 'RUNNING', total_count = #{totalCount},
+            started_at = #{startedAt}, updated_at = #{startedAt}
+        WHERE id = #{id} AND status = 'PENDING'
+    </update>
+
+    <update id="completeJob">
+        UPDATE search_index_job SET status = 'COMPLETED', indexed_count = #{indexedCount},
+            failed_count = #{failedCount}, completed_at = #{completedAt}, updated_at = #{completedAt}
+        WHERE id = #{id} AND status = 'RUNNING'
+    </update>
+
+    <update id="failJob">
+        UPDATE search_index_job SET status = 'FAILED', indexed_count = #{indexedCount},
+            failed_count = #{failedCount}, error_message = #{errorMessage},
+            completed_at = #{completedAt}, updated_at = #{completedAt}
+        WHERE id = #{id} AND status IN ('PENDING', 'RUNNING')
+    </update>
+</mapper>

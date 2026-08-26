@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.petassistant.business.data.mapper.AdminAuditMapper">
+
+    <insert id="insert">
+        INSERT INTO admin_audit_log
+            (id, actor_user_id, target_user_id, action, before_value, after_value, created_at)
+        VALUES
+            (#{id}, #{actorUserId}, #{targetUserId}, #{action}, #{beforeValue}, #{afterValue}, #{createdAt})
+    </insert>
+
+    <select id="findRecent" resultType="com.petassistant.business.data.dto.response.AdminAuditResponse">
+        SELECT a.id,
+               a.actor_user_id AS actorUserId,
+               actor.username AS actorUsername,
+               a.target_user_id AS targetUserId,
+               target.username AS targetUsername,
+               a.action,
+               a.before_value AS beforeValue,
+               a.after_value AS afterValue,
+               a.created_at AS createdAt
+        FROM admin_audit_log a
+        JOIN app_user actor ON actor.id = a.actor_user_id
+        LEFT JOIN app_user target ON target.id = a.target_user_id
+        ORDER BY a.created_at DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countAll" resultType="long">
+        SELECT COUNT(*) FROM admin_audit_log
+    </select>
+</mapper>

@@ -1,0 +1,133 @@
+server:
+  port: ${SERVER_PORT:8080}
+
+spring:
+  application:
+    name: pet-assistant-business-service
+  # 登录由自定义 JWT 过滤器负责，不创建 Spring Boot 默认内存用户和随机控制台密码。
+  autoconfigure:
+    exclude: org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
+  config:
+    # 兼容从 Java 模块目录或项目根目录启动，确保 IDEA 能加载同一份开发配置。
+    import:
+      - optional:file:.env[.properties]
+      - optional:file:backend/business-service/.env[.properties]
+  datasource:
+    url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:pet_assistant}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
+    username: ${MYSQL_USERNAME:root}
+    password: ${MYSQL_PASSWORD:}
+    hikari:
+      connection-timeout: 3000
+      validation-timeout: 2000
+      maximum-pool-size: 10
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    validate-migration-naming: true
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      connect-timeout: 2s
+      timeout: 2s
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:pet_assistant}
+    password: ${RABBITMQ_PASSWORD:pet_assistant_dev}
+    connection-timeout: 3s
+    listener:
+      simple:
+        default-requeue-rejected: false
+        retry:
+          enabled: true
+          max-attempts: 3
+          multiplier: 2.0
+
+# MyBatis 只负责数据读写；表结构版本仍由 Flyway 管理。
+mybatis:
+  mapper-locations: classpath:/mapper/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+    default-fetch-size: 100
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+app:
+  ai-service:
+    base-url: ${AI_SERVICE_BASE_URL:http://localhost:8000}
+    connect-timeout: 2s
+    # 百炼生成通常慢于本地抽取；该值必须大于 FastAPI 的外部模型超时并预留网络开销。
+    response-timeout: ${AI_SERVICE_RESPONSE_TIMEOUT:35s}
+  cors:
+    allowed-origin: ${FRONTEND_ORIGIN:http://localhost:5173}
+  cache:
+    # 仅缓存最近 12 条 USER/ASSISTANT 上下文；MySQL 始终是数据源。
+    conversation-context-ttl: 30m
+    # 用户资料缓存可回源 MySQL；更新资料后主动删除。
+    user-session-ttl: 15m
+    # 角色和状态安全版本缓存；Redis 故障时必须回源 MySQL 校验。
+    principal-security-ttl: 15m
+  security:
+    jwt-issuer: ${JWT_ISSUER:pet-assistant-business-service}
+    # 仅供本机开发的默认值；部署环境必须通过 JWT_SECRET 覆盖且长度不少于 32 字节。
+    jwt-secret: ${JWT_SECRET:local-dev-change-this-jwt-secret-32-bytes-minimum}
+    access-token-ttl: ${ACCESS_TOKEN_TTL:15m}
+    refresh-token-ttl: ${REFRESH_TOKEN_TTL:7d}
+    login-failure-limit: ${LOGIN_FAILURE_LIMIT:5}
+    login-failure-window: ${LOGIN_FAILURE_WINDOW:15m}
+    login-rate-limit: ${LOGIN_RATE_LIMIT:20}
+    login-rate-window: ${LOGIN_RATE_WINDOW:1m}
+    # 两项都填写时，仅在用户名不存在的情况下创建本地管理员。
+    bootstrap-admin-username: ${BOOTSTRAP_ADMIN_USERNAME:}
+    bootstrap-admin-password: ${BOOTSTRAP_ADMIN_PASSWORD:}
+  media:
+    endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
+    access-key: ${MINIO_ACCESS_KEY:petassistant}
+    secret-key: ${MINIO_SECRET_KEY:petassistant_dev_secret}
+    bucket: ${MINIO_BUCKET:pet-community}
+    upload-url-ttl: ${MINIO_UPLOAD_URL_TTL:10m}
+    download-url-ttl: ${MINIO_DOWNLOAD_URL_TTL:1m}
+    max-image-bytes: ${MAX_IMAGE_BYTES:10485760}
+    max-video-bytes: ${MAX_VIDEO_BYTES:52428800}
+  community:
+    post-cache-ttl: 10m
+    bloom-name: community:post:bloom
+    bloom-ready-key: community:post:bloom:ready
+    rabbit-exchange: pet.community.events
+    rabbit-queue: pet.community.media
+    rabbit-routing-key: community.media
+    outbox-publish-delay-ms: 3000
+  knowledge:
+    # 知识预检和向量发布使用独立持久化队列，Outbox 仍是可靠投递事实源。
+    rabbit-exchange: pet.knowledge.events
+    rabbit-queue: pet.knowledge.workflow
+    rabbit-routing-key: knowledge.workflow
+    rabbit-listener-enabled: ${KNOWLEDGE_RABBIT_LISTENER_ENABLED:true}
+  search:
+    # OpenSearch 是可重建查询副本；故障时统一搜索自动回到同权限边界的 MySQL 查询。
+    enabled: ${OPENSEARCH_ENABLED:true}
+    # 当前开发环境使用虚拟机中的 OpenSearch；部署环境仍可通过环境变量覆盖。
+    # 仓库默认使用本机地址；开发者可在不提交的 .env 中覆盖为虚拟机地址。
+    endpoint: ${OPENSEARCH_ENDPOINT:http://localhost:9200}
+    index-name: ${OPENSEARCH_INDEX:pet_assistant_public_v1}
+    # 必须与 FastAPI 本地 BGE 模型实际输出维度一致。
+    embedding-dimensions: ${AI_EMBEDDING_DIMENSIONS:512}
+    connect-timeout: ${OPENSEARCH_CONNECT_TIMEOUT:2s}
+    read-timeout: ${OPENSEARCH_READ_TIMEOUT:5s}
+    result-cache-ttl: ${SEARCH_RESULT_CACHE_TTL:2m}
+    rabbit-listener-enabled: ${SEARCH_RABBIT_LISTENER_ENABLED:true}
+    rabbit-exchange: pet.search.events
+    rabbit-queue: pet.search.index
+    rabbit-routing-key: search.index
+  agent:
+    # Java 只限定候选范围，Agent 再决定是否调用本地知识检索工具。
+    candidate-limit: 500
+    top-k: 3
+    # BGE 中文向量初始门槛；该值只影响 search_pet_knowledge 工具的召回结果。
+    min-score: 0.35

@@ -1,0 +1,32 @@
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Environment and secrets
+.env
+**/.env
+!.env.example
+!**/.env.example
+
+# Java
+**/target/
+**/.m2/
+*.log
+
+# Python
+**/__pycache__/
+**/.pytest_cache/
+**/.venv/
+**/.cache/
+**/.tmp/
+**/*.py[cod]
+
+# Node
+**/node_modules/
+**/dist/
+**/*.tsbuildinfo
+
+# OS
+.DS_Store
+Thumbs.db

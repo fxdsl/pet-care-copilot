@@ -1,0 +1,145 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.petassistant.business.data.mapper.KnowledgeSubmissionMapper">
+
+    <sql id="submissionColumns">
+        id, source_type, source_business_id, author_user_id, title, source_name, source_author,
+        source_url, file_name, document_type, pet_type, category, original_content, cleaned_content,
+        content_checksum, consent_status, status, risk_level, risk_labels, ai_summary, quality_score,
+        current_version, reviewer_user_id, reviewed_at, published_document_id, source_published_at,
+        published_at, expires_at, error_message, created_at, updated_at
+    </sql>
+
+    <insert id="insert">
+        INSERT INTO knowledge_submission
+            (<include refid="submissionColumns"/>)
+        VALUES
+            (#{id}, #{sourceType}, #{sourceBusinessId}, #{authorUserId}, #{title}, #{sourceName}, #{sourceAuthor},
+             #{sourceUrl}, #{fileName}, #{documentType}, #{petType}, #{category}, #{originalContent}, #{cleanedContent},
+             #{contentChecksum}, #{consentStatus}, #{status}, #{riskLevel}, #{riskLabels}, #{aiSummary}, #{qualityScore},
+             #{currentVersion}, #{reviewerUserId}, #{reviewedAt}, #{publishedDocumentId}, #{sourcePublishedAt},
+             #{publishedAt}, #{expiresAt}, #{errorMessage}, #{createdAt}, #{updatedAt})
+    </insert>
+
+    <insert id="insertVersion">
+        INSERT INTO knowledge_submission_version
+            (id, submission_id, version, title, original_content, cleaned_content, content_checksum,
+             ai_summary, risk_level, risk_labels, quality_score, created_at)
+        VALUES
+            (#{id}, #{submissionId}, #{version}, #{title}, #{originalContent}, #{cleanedContent},
+             #{contentChecksum}, #{aiSummary}, #{riskLevel}, #{riskLabels}, #{qualityScore}, #{createdAt})
+    </insert>
+
+    <insert id="insertReviewRecord">
+        INSERT INTO knowledge_review_record
+            (id, submission_id, version, reviewer_user_id, action, trust_level, reason, created_at)
+        VALUES
+            (#{id}, #{submissionId}, #{version}, #{reviewerUserId}, #{action}, #{trustLevel}, #{reason}, #{createdAt})
+    </insert>
+
+    <select id="findById" resultType="com.petassistant.business.data.entity.KnowledgeSubmissionEntity">
+        SELECT <include refid="submissionColumns"/> FROM knowledge_submission WHERE id = #{id}
+    </select>
+
+    <select id="findBySource" resultType="com.petassistant.business.data.entity.KnowledgeSubmissionEntity">
+        SELECT <include refid="submissionColumns"/> FROM knowledge_submission
+        WHERE source_type = #{sourceType} AND source_business_id = #{sourceBusinessId}
+    </select>
+
+    <select id="findMine" resultType="com.petassistant.business.data.entity.KnowledgeSubmissionEntity">
+        SELECT <include refid="submissionColumns"/> FROM knowledge_submission
+        WHERE author_user_id = #{authorUserId}
+        ORDER BY updated_at DESC LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countMine" resultType="long">
+        SELECT COUNT(*) FROM knowledge_submission WHERE author_user_id = #{authorUserId}
+    </select>
+
+    <sql id="reviewFilters">
+        WHERE 1 = 1
+        <if test="status != null and status != ''">AND status = #{status}</if>
+        <if test="riskLevel != null and riskLevel != ''">AND risk_level = #{riskLevel}</if>
+        <if test="sourceType != null and sourceType != ''">AND source_type = #{sourceType}</if>
+    </sql>
+
+    <select id="findReviewPage" resultType="com.petassistant.business.data.entity.KnowledgeSubmissionEntity">
+        SELECT <include refid="submissionColumns"/> FROM knowledge_submission
+        <include refid="reviewFilters"/>
+        ORDER BY CASE risk_level WHEN 'HIGH' THEN 1 WHEN 'MEDIUM' THEN 2 ELSE 3 END, created_at
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countReviewPage" resultType="long">
+        SELECT COUNT(*) FROM knowledge_submission <include refid="reviewFilters"/>
+    </select>
+
+    <select id="countByStatus" resultType="long">
+        SELECT COUNT(*) FROM knowledge_submission WHERE status = #{status}
+    </select>
+
+    <select id="countHighRisk" resultType="long">
+        SELECT COUNT(*) FROM knowledge_submission WHERE risk_level = 'HIGH' AND status = 'PENDING_REVIEW'
+    </select>
+
+    <select id="findTimeline" resultType="com.petassistant.business.data.entity.KnowledgeReviewRecordEntity">
+        SELECT id, submission_id, version, reviewer_user_id, action, trust_level, reason, created_at
+        FROM knowledge_review_record WHERE submission_id = #{submissionId} ORDER BY created_at, id
+    </select>
+
+    <update id="completePrecheck">
+        UPDATE knowledge_submission
+        SET cleaned_content = #{cleanedContent}, content_checksum = #{contentChecksum}, ai_summary = #{summary},
+            risk_level = #{riskLevel}, risk_labels = #{riskLabels}, quality_score = #{qualityScore},
+            status = 'PENDING_REVIEW', error_message = NULL, updated_at = #{updatedAt}
+        WHERE id = #{id} AND current_version = #{expectedVersion} AND status = 'PRECHECKING'
+    </update>
+
+    <update id="updateVersionPrecheck">
+        UPDATE knowledge_submission_version
+        SET cleaned_content = #{cleanedContent}, content_checksum = #{contentChecksum}, ai_summary = #{summary},
+            risk_level = #{riskLevel}, risk_labels = #{riskLabels}, quality_score = #{qualityScore}
+        WHERE submission_id = #{submissionId} AND version = #{version}
+    </update>
+
+    <update id="resetForResubmission">
+        UPDATE knowledge_submission
+        SET title = #{title}, original_content = #{content}, pet_type = #{petType}, category = #{category},
+            cleaned_content = NULL, content_checksum = NULL, consent_status = 'GRANTED', status = 'PRECHECKING',
+            risk_level = NULL, risk_labels = NULL, ai_summary = NULL, quality_score = NULL,
+            current_version = #{newVersion}, reviewer_user_id = NULL, reviewed_at = NULL,
+            published_document_id = NULL, published_at = NULL, error_message = NULL, updated_at = #{updatedAt}
+        WHERE id = #{id} AND author_user_id = #{authorUserId}
+          AND status IN ('REJECTED', 'WITHDRAWN', 'FAILED')
+    </update>
+
+    <update id="approve">
+        UPDATE knowledge_submission SET status = 'PUBLISHING', reviewer_user_id = #{reviewerUserId},
+            reviewed_at = #{reviewedAt}, updated_at = #{reviewedAt}
+        WHERE id = #{id} AND current_version = #{expectedVersion} AND status = 'PENDING_REVIEW'
+    </update>
+
+    <update id="reject">
+        UPDATE knowledge_submission SET status = 'REJECTED', reviewer_user_id = #{reviewerUserId},
+            reviewed_at = #{reviewedAt}, error_message = #{reason}, updated_at = #{reviewedAt}
+        WHERE id = #{id} AND current_version = #{expectedVersion} AND status = 'PENDING_REVIEW'
+    </update>
+
+    <update id="markPublished">
+        UPDATE knowledge_submission SET status = 'PUBLISHED', published_document_id = #{documentId},
+            published_at = #{publishedAt}, error_message = NULL, updated_at = #{publishedAt}
+        WHERE id = #{id} AND current_version = #{expectedVersion} AND status = 'PUBLISHING'
+    </update>
+
+    <update id="markFailed">
+        UPDATE knowledge_submission SET status = 'FAILED', error_message = #{errorMessage}, updated_at = #{updatedAt}
+        WHERE id = #{id} AND current_version = #{expectedVersion}
+          AND status IN ('PRECHECKING', 'PUBLISHING')
+    </update>
+
+    <update id="withdrawOwned">
+        UPDATE knowledge_submission SET status = 'WITHDRAWN', consent_status = 'WITHDRAWN', updated_at = #{updatedAt}
+        WHERE id = #{id} AND author_user_id = #{authorUserId}
+          AND status IN ('PRECHECKING', 'PENDING_REVIEW', 'REJECTED', 'PUBLISHED', 'FAILED')
+    </update>
+</mapper>

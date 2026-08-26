@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.petassistant.business.data.mapper.ConversationMapper">
+
+    <!-- 显式构造器映射避免数据库下划线字段渗透到 Java 实体定义。 -->
+    <resultMap id="conversationEntityMap" type="com.petassistant.business.data.entity.ConversationEntity">
+        <constructor>
+            <idArg column="id" javaType="java.lang.String"/>
+            <arg column="user_id" javaType="java.lang.String"/>
+            <arg column="title" javaType="java.lang.String"/>
+            <arg column="status" javaType="java.lang.String"/>
+            <arg column="created_at" javaType="java.time.Instant"/>
+            <arg column="updated_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="messageEntityMap" type="com.petassistant.business.data.entity.MessageEntity">
+        <constructor>
+            <idArg column="id" javaType="java.lang.String"/>
+            <arg column="conversation_id" javaType="java.lang.String"/>
+            <arg column="role" javaType="java.lang.String"/>
+            <arg column="content" javaType="java.lang.String"/>
+            <arg column="model_name" javaType="java.lang.String"/>
+            <arg column="token_count" javaType="java.lang.Integer"/>
+            <arg column="created_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+
+    <insert id="insertConversation">
+        INSERT INTO conversation (id, user_id, title, status, created_at, updated_at)
+        VALUES (#{id}, #{userId}, #{title}, #{status}, #{createdAt}, #{updatedAt})
+    </insert>
+
+    <select id="findByIdAndUser" resultMap="conversationEntityMap">
+        SELECT id, user_id, title, status, created_at, updated_at
+        FROM conversation
+        WHERE id = #{id} AND user_id = #{userId}
+    </select>
+
+    <select id="findRecentByUser" resultMap="conversationEntityMap">
+        SELECT id, user_id, title, status, created_at, updated_at
+        FROM conversation
+        WHERE user_id = #{userId}
+        ORDER BY updated_at DESC
+        LIMIT #{limit}
+    </select>
+
+    <insert id="insertMessage">
+        INSERT INTO message (id, conversation_id, role, content, model_name, token_count, created_at)
+        VALUES (#{id}, #{conversationId}, #{role}, #{content}, #{modelName}, #{tokenCount}, #{createdAt})
+    </insert>
+
+    <update id="touchConversation">
+        UPDATE conversation
+        SET updated_at = #{updatedAt}
+        WHERE id = #{conversationId}
+    </update>
+
+    <select id="findMessages" resultMap="messageEntityMap">
+        SELECT id, conversation_id, role, content, model_name, token_count, created_at
+        FROM message
+        WHERE conversation_id = #{conversationId}
+        ORDER BY created_at, id
+    </select>
+
+    <!-- 内层倒序只读取最近记录，外层再恢复为模型需要的时间正序。 -->
+    <select id="findRecentMessages" resultMap="messageEntityMap">
+        SELECT id, conversation_id, role, content, model_name, token_count, created_at
+        FROM (
+            SELECT id, conversation_id, role, content, model_name, token_count, created_at
+            FROM message
+            WHERE conversation_id = #{conversationId}
+              AND role IN ('USER', 'ASSISTANT')
+            ORDER BY created_at DESC, id DESC
+            LIMIT #{limit}
+        ) recent_messages
+        ORDER BY created_at, id
+    </select>
+
+</mapper>

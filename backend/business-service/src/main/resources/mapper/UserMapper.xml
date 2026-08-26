@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.petassistant.business.data.mapper.UserMapper">
+
+    <resultMap id="userEntityMap" type="com.petassistant.business.data.entity.UserEntity">
+        <constructor>
+            <idArg column="id" javaType="java.lang.String"/>
+            <arg column="username" javaType="java.lang.String"/>
+            <arg column="password_hash" javaType="java.lang.String"/>
+            <arg column="display_name" javaType="java.lang.String"/>
+            <arg column="role" javaType="java.lang.String"/>
+            <arg column="status" javaType="java.lang.String"/>
+            <arg column="security_version" javaType="_long"/>
+            <arg column="avatar_url" javaType="java.lang.String"/>
+            <arg column="bio" javaType="java.lang.String"/>
+            <arg column="region" javaType="java.lang.String"/>
+            <arg column="last_login_at" javaType="java.time.Instant"/>
+            <arg column="created_at" javaType="java.time.Instant"/>
+            <arg column="updated_at" javaType="java.time.Instant"/>
+        </constructor>
+    </resultMap>
+
+    <sql id="userColumns">
+        id, username, password_hash, display_name, role, status,
+        security_version, avatar_url, bio, region, last_login_at, created_at, updated_at
+    </sql>
+
+    <select id="findById" resultMap="userEntityMap">
+        SELECT <include refid="userColumns"/>
+        FROM app_user
+        WHERE id = #{id}
+    </select>
+
+    <select id="findByUsername" resultMap="userEntityMap">
+        SELECT <include refid="userColumns"/>
+        FROM app_user
+        WHERE username = #{username}
+    </select>
+
+    <insert id="insert">
+        INSERT INTO app_user
+            (id, username, password_hash, display_name, role, status,
+             avatar_url, bio, region, last_login_at, created_at, updated_at)
+        VALUES
+            (#{id}, #{username}, #{passwordHash}, #{displayName}, #{role}, #{status},
+             #{avatarUrl}, #{bio}, #{region}, #{lastLoginAt}, #{createdAt}, #{updatedAt})
+    </insert>
+
+    <update id="updateLastLogin">
+        UPDATE app_user
+        SET last_login_at = #{lastLoginAt}, updated_at = #{lastLoginAt}
+        WHERE id = #{id}
+    </update>
+
+    <update id="updateProfile">
+        UPDATE app_user
+        SET display_name = #{displayName}, avatar_url = #{avatarUrl}, bio = #{bio},
+            region = #{region}, updated_at = #{updatedAt}
+        WHERE id = #{id} AND status = 'ACTIVE'
+    </update>
+
+    <sql id="adminUserFilters">
+        <where>
+            <if test="keyword != null and keyword != ''">
+                (username LIKE CONCAT('%', #{keyword}, '%')
+                 OR display_name LIKE CONCAT('%', #{keyword}, '%'))
+            </if>
+            <if test="role != null and role != ''">
+                AND role = #{role}
+            </if>
+            <if test="status != null and status != ''">
+                AND status = #{status}
+            </if>
+        </where>
+    </sql>
+
+    <select id="findPage" resultMap="userEntityMap">
+        SELECT <include refid="userColumns"/>
+        FROM app_user
+        <include refid="adminUserFilters"/>
+        ORDER BY created_at DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countPage" resultType="long">
+        SELECT COUNT(*)
+        FROM app_user
+        <include refid="adminUserFilters"/>
+    </select>
+
+    <select id="countActiveAdmins" resultType="long">
+        SELECT COUNT(*) FROM app_user WHERE role = 'ADMIN' AND status = 'ACTIVE'
+    </select>
+
+    <update id="updateRole">
+        UPDATE app_user
+        SET role = #{role}, security_version = security_version + 1, updated_at = #{updatedAt}
+        WHERE id = #{id}
+    </update>
+
+    <update id="updateStatus">
+        UPDATE app_user
+        SET status = #{status}, security_version = security_version + 1, updated_at = #{updatedAt}
+        WHERE id = #{id}
+    </update>
+</mapper>
