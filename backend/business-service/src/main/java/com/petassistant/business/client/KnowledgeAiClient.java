@@ -11,6 +11,9 @@ import com.petassistant.business.data.dto.internal.AiSearchEmbeddingResponse;
 import com.petassistant.business.data.dto.internal.KnowledgeProcessInput;
 import com.petassistant.business.data.dto.request.PdfExtractRequest;
 import com.petassistant.business.exception.AiServiceUnavailableException;
+import io.github.resilience4j.bulkhead.annotation.Bulkhead;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import io.github.resilience4j.retry.annotation.Retry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -34,6 +37,9 @@ public class KnowledgeAiClient {
     }
 
     /** 将审核通过的内部发布输入转换为 Python 契约并调用预处理接口。 */
+    @Retry(name = "aiService")
+    @CircuitBreaker(name = "aiService")
+    @Bulkhead(name = "aiService", type = Bulkhead.Type.SEMAPHORE)
     public AiKnowledgePreprocessResponse preprocess(KnowledgeProcessInput request) {
         AiKnowledgePreprocessRequest aiRequest = new AiKnowledgePreprocessRequest(
                 request.title(), request.content(), request.resolvedChunkSize(), request.resolvedChunkOverlap()
@@ -55,6 +61,8 @@ public class KnowledgeAiClient {
     }
 
     /** 审核预检只做规则化清洗与风险标注，不生成向量、不消耗通用模型额度。 */
+    @CircuitBreaker(name = "aiService")
+    @Bulkhead(name = "aiService", type = Bulkhead.Type.SEMAPHORE)
     public AiKnowledgePrecheckResponse precheck(String title, String content, String sourceType) {
         try {
             AiKnowledgePrecheckResponse response = aiRestClient.post()
@@ -79,6 +87,9 @@ public class KnowledgeAiClient {
     }
 
     /** 统一搜索只调用免费本地 BGE，不会消耗百炼通用模型额度。 */
+    @Retry(name = "aiService")
+    @CircuitBreaker(name = "aiService")
+    @Bulkhead(name = "aiService", type = Bulkhead.Type.SEMAPHORE)
     public AiSearchEmbeddingResponse embedForSearch(String text, boolean documentMode) {
         try {
             AiSearchEmbeddingResponse response = aiRestClient.post()
@@ -97,6 +108,9 @@ public class KnowledgeAiClient {
     }
 
     /** 转发 PDF 到 FastAPI 做安全校验、逐页提取和扫描件识别。 */
+    @Retry(name = "aiService")
+    @CircuitBreaker(name = "aiService")
+    @Bulkhead(name = "aiService", type = Bulkhead.Type.SEMAPHORE)
     public AiPdfExtractResponse extractPdf(PdfExtractRequest request) {
         try {
             AiPdfExtractResponse response = aiRestClient.post()

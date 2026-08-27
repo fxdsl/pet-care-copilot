@@ -25,6 +25,7 @@ import com.petassistant.business.data.entity.PetProfileEntity;
 import com.petassistant.business.data.mapper.KnowledgeMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -45,6 +46,7 @@ public class ChatService {
     private final ConversationService conversationService;
     private final ConversationContextCacheService contextCacheService;
     private final PetProfileService petProfileService;
+    private final PlatformMetricsService metrics;
 
     /** 注入候选数据访问、FastAPI 客户端、JSON 工具和 RAG 参数。 */
     public ChatService(
@@ -54,7 +56,8 @@ public class ChatService {
             AgentProperties agentProperties,
             ConversationService conversationService,
             ConversationContextCacheService contextCacheService,
-            PetProfileService petProfileService
+            PetProfileService petProfileService,
+            PlatformMetricsService metrics
     ) {
         this.knowledgeMapper = knowledgeMapper;
         this.aiServiceClient = aiServiceClient;
@@ -63,6 +66,7 @@ public class ChatService {
         this.conversationService = conversationService;
         this.contextCacheService = contextCacheService;
         this.petProfileService = petProfileService;
+        this.metrics = metrics;
     }
 
     /**
@@ -109,6 +113,8 @@ public class ChatService {
             history = conversationService.getRecentMessagesForContext(userId, conversationId, 12);
         }
 
+        MDC.put("conversationId", conversationId);
+        try {
         // ④ 确定有效的宠物类型：有档案时优先使用档案数据（更准确），无档案时使用请求参数（兜底）
         String effectivePetType = profile == null ? request.petType() : profile.petType();
 
@@ -137,6 +143,7 @@ public class ChatService {
         AiAgentResponse aiResponse = streamListener == null
                 ? aiServiceClient.answer(aiRequest)
                 : aiServiceClient.answerStreaming(aiRequest, streamListener);
+        metrics.recordAgentUsage(request.question(), aiResponse.answer(), aiResponse.toolCallCount());
 
         // ⑨ 事务性保存消息：在数据库事务中保存本轮对话的USER消息（问题）
         conversationService.addMessage(
@@ -196,6 +203,9 @@ public class ChatService {
                 aiResponse.terminationReason(),
                 aiResponse.toolCallCount()
         );
+        } finally {
+            MDC.remove("conversationId");
+        }
     }
 
     /**

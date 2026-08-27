@@ -32,6 +32,7 @@ public class ScheduledMaintenanceService {
     private final RabbitTemplate rabbitTemplate;
     private final StringRedisTemplate redisTemplate;
     private final TransactionTemplate transactionTemplate;
+    private final PlatformMetricsService metrics;
     private final String communityQueue;
     private final String knowledgeQueue;
     private final String searchQueue;
@@ -42,6 +43,7 @@ public class ScheduledMaintenanceService {
             RabbitTemplate rabbitTemplate,
             StringRedisTemplate redisTemplate,
             PlatformTransactionManager transactionManager,
+            PlatformMetricsService metrics,
             @Value("${app.community.rabbit-queue}") String communityQueue,
             @Value("${app.knowledge.rabbit-queue}") String knowledgeQueue,
             @Value("${app.search.rabbit-queue}") String searchQueue
@@ -51,6 +53,7 @@ public class ScheduledMaintenanceService {
         this.rabbitTemplate = rabbitTemplate;
         this.redisTemplate = redisTemplate;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
+        this.metrics = metrics;
         this.communityQueue = communityQueue;
         this.knowledgeQueue = knowledgeQueue;
         this.searchQueue = searchQueue;
@@ -130,6 +133,7 @@ public class ScheduledMaintenanceService {
         );
         counts.forEach((queue, count) -> redisTemplate.opsForHash()
                 .put("platform:queue:backlog", queue, Integer.toString(count)));
+        counts.forEach(metrics::recordQueueBacklog);
         redisTemplate.expire("platform:queue:backlog", Duration.ofMinutes(10));
         return counts.values().stream().mapToInt(Integer::intValue).sum();
     }

@@ -61,7 +61,61 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,prometheus,circuitbreakers,circuitbreakerevents,retries,retryevents,bulkheads,bulkheadevents
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+
+# 外部依赖的 HTTP/SDK 超时由各客户端配置；Resilience4j 负责失败窗口、受控重试和并发隔离。
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        failure-rate-threshold: 50
+        slow-call-rate-threshold: 60
+        slow-call-duration-threshold: 4s
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 3
+        register-health-indicator: true
+    instances:
+      aiService: { base-config: default }
+      minio: { base-config: default }
+      openSearch: { base-config: default }
+      rabbitPublisher: { base-config: default }
+  retry:
+    instances:
+      aiService:
+        max-attempts: 2
+        wait-duration: 300ms
+      minio:
+        max-attempts: 2
+        wait-duration: 250ms
+      openSearchRead:
+        max-attempts: 2
+        wait-duration: 200ms
+      openSearchWrite:
+        max-attempts: 3
+        wait-duration: 300ms
+      rabbitPublisher:
+        # Outbox eventId + 消费者幂等使这里的短重试不会膨胀业务计数。
+        max-attempts: 3
+        wait-duration: 300ms
+  bulkhead:
+    instances:
+      aiService: { max-concurrent-calls: 12, max-wait-duration: 0 }
+      minio: { max-concurrent-calls: 16, max-wait-duration: 0 }
+      openSearch: { max-concurrent-calls: 20, max-wait-duration: 0 }
+      rabbitPublisher: { max-concurrent-calls: 8, max-wait-duration: 0 }
 
 app:
   ai-service:
@@ -98,6 +152,8 @@ app:
     bucket: ${MINIO_BUCKET:pet-community}
     upload-url-ttl: ${MINIO_UPLOAD_URL_TTL:10m}
     download-url-ttl: ${MINIO_DOWNLOAD_URL_TTL:1m}
+    connect-timeout: ${MINIO_CONNECT_TIMEOUT:2s}
+    read-timeout: ${MINIO_READ_TIMEOUT:5s}
     max-image-bytes: ${MAX_IMAGE_BYTES:10485760}
     max-video-bytes: ${MAX_VIDEO_BYTES:52428800}
   community:

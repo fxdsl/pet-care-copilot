@@ -6,6 +6,7 @@
 # Environment and secrets
 .env
 **/.env
+**/.env.deploy
 !.env.example
 !**/.env.example
 

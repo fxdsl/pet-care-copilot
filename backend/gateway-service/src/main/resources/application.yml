@@ -1,0 +1,46 @@
+server:
+  port: ${GATEWAY_PORT:8088}
+
+spring:
+  application:
+    name: pet-assistant-gateway-service
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      connect-timeout: 2s
+      timeout: 2s
+  cloud:
+    gateway:
+      server:
+        webflux:
+          httpclient:
+            connect-timeout: 2000
+            response-timeout: 45s
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,gateway
+  endpoint:
+    health:
+      probes:
+        enabled: true
+    gateway:
+      # 只开放路由只读诊断，禁止通过 Actuator 修改运行时路由。
+      access: read-only
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+
+app:
+  frontend-origin: ${FRONTEND_ORIGIN:http://localhost:5173}
+  business-service-uri: ${BUSINESS_SERVICE_URI:http://localhost:8080}
+  rate-limit:
+    replenish-rate: ${GATEWAY_REPLENISH_RATE:20}
+    burst-capacity: ${GATEWAY_BURST_CAPACITY:40}

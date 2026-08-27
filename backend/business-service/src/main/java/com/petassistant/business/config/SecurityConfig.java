@@ -50,7 +50,12 @@ public class SecurityConfig {
                         .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         //公开接口
-                        .requestMatchers("/api/v1/auth/**", "/api/v1/system/health", "/actuator/health", "/error", "/ws/**")
+                        // Prometheus 只在容器内网抓取该端点；部署时不能把 8080 直接暴露到公网。
+                        .requestMatchers(
+                                "/api/v1/auth/**", "/api/v1/system/health",
+                                "/actuator/health", "/actuator/health/**", "/actuator/prometheus",
+                                "/error", "/ws/**"
+                        )
                         .permitAll()
                         .requestMatchers("/api/v1/knowledge/**", "/api/v1/admin/**").hasRole("ADMIN")//管理员专属接口
                         .requestMatchers("/api/v1/moderation/**").hasAnyRole("ADMIN", "MODERATOR")//管理员或版主接口

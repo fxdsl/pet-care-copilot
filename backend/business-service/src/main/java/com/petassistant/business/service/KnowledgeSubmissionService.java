@@ -61,6 +61,7 @@ public class KnowledgeSubmissionService {
     private final MessageService messageService;
     private final StringRedisTemplate redisTemplate;
     private final RedissonClient redissonClient;
+    private final PlatformMetricsService metrics;
 
     public KnowledgeSubmissionService(
             KnowledgeSubmissionMapper mapper,
@@ -72,7 +73,8 @@ public class KnowledgeSubmissionService {
             OutboxService outboxService,
             MessageService messageService,
             StringRedisTemplate redisTemplate,
-            RedissonClient redissonClient
+            RedissonClient redissonClient,
+            PlatformMetricsService metrics
     ) {
         this.mapper = mapper;
         this.knowledgeMapper = knowledgeMapper;
@@ -84,6 +86,7 @@ public class KnowledgeSubmissionService {
         this.messageService = messageService;
         this.redisTemplate = redisTemplate;
         this.redissonClient = redissonClient;
+        this.metrics = metrics;
     }
 
     /** 用户只能投稿自己已发布的帖子，且必须显式授权。 */
@@ -234,6 +237,10 @@ public class KnowledgeSubmissionService {
             throw new IllegalArgumentException("action 只允许 APPROVE 或 REJECT");
         }
         evictCache(submission.id());
+        // 历史或测试数据可能没有创建时间；指标缺失不能阻断真实审核事务。
+        if (submission.createdAt() != null) {
+            metrics.recordKnowledgeReviewLatency(java.time.Duration.between(submission.createdAt(), now));
+        }
         return toResponse(mapper.findById(submission.id()), true);
     }
 

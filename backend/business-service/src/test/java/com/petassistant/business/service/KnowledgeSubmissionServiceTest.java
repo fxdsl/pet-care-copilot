@@ -44,6 +44,7 @@ class KnowledgeSubmissionServiceTest {
     @Mock private MessageService messageService;
     @Mock private StringRedisTemplate redisTemplate;
     @Mock private RedissonClient redissonClient;
+    @Mock private PlatformMetricsService metrics;
 
     private KnowledgeSubmissionService service;
 
@@ -51,7 +52,7 @@ class KnowledgeSubmissionServiceTest {
     void setUp() {
         service = new KnowledgeSubmissionService(
                 mapper, knowledgeMapper, postMapper, userMapper, aiClient, knowledgeService,
-                outboxService, messageService, redisTemplate, redissonClient
+                outboxService, messageService, redisTemplate, redissonClient, metrics
         );
     }
 

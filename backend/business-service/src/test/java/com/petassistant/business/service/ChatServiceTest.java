@@ -49,6 +49,9 @@ class ChatServiceTest {
     @Mock
     private PetProfileService petProfileService;
 
+    @Mock
+    private PlatformMetricsService metrics;
+
     private ChatService service;
 
     /** 使用真实 ObjectMapper 构造被测服务，覆盖 MySQL JSON 向量转换。 */
@@ -61,7 +64,8 @@ class ChatServiceTest {
                 new AgentProperties(500, 3, 0.35),
                 conversationService,
                 contextCacheService,
-                petProfileService
+                petProfileService,
+                metrics
         );
     }
 

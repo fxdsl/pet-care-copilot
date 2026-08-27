@@ -17,6 +17,7 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
+import org.slf4j.MDC;
 
 /** 从 Authorization Bearer 头恢复无状态登录身份。 */
 @Component
@@ -51,9 +52,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             filterChain.doFilter(request, response);
             return;
         }
+        AuthenticatedUser principal;
         try {
             // 第2步：解析 JWT Token 得到 AuthenticatedUser 对象，包含用户 ID、用户名、角色、安全版本。
-            AuthenticatedUser principal = tokenService.parse(authorization.substring(7).trim());
+            principal = tokenService.parse(authorization.substring(7).trim());
             // 第3步：检查用户是否当前登录，是否权限是否变化。
             if (!principalSecurityService.isCurrent(principal)) {
                 SecurityContextHolder.clearContext();
@@ -65,16 +67,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 );
                 return;
             }
-            // 第4步：【核心】创建 Authentication 对象并写入 SecurityContext
-            var authentication = new UsernamePasswordAuthenticationToken(
-                    principal,
-                    null,
-                    List.of(new SimpleGrantedAuthority("ROLE_" + principal.role()))
-            );
-            // 【关键写入操作】把认证信息存入 SecurityContext
-            SecurityContextHolder.getContext().setAuthentication(authentication);
-            // 第5步：继续处理请求链
-            filterChain.doFilter(request, response);
         } catch (DataAccessException exception) {
             SecurityContextHolder.clearContext();
             errorWriter.write(
@@ -83,6 +75,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     "AUTHORIZATION_UNAVAILABLE",
                     "暂时无法确认账号权限，请稍后重试"
             );
+            return;
         } catch (JwtException | IllegalArgumentException exception) {
             SecurityContextHolder.clearContext();
             errorWriter.write(
@@ -91,6 +84,22 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     "INVALID_ACCESS_TOKEN",
                     "登录凭证无效或已过期，请重新登录"
             );
+            return;
+        }
+
+        // 第4步：【核心】创建 Authentication 对象并写入 SecurityContext。
+        var authentication = new UsernamePasswordAuthenticationToken(
+                principal,
+                null,
+                List.of(new SimpleGrantedAuthority("ROLE_" + principal.role()))
+        );
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+        MDC.put("userId", principal.userId());
+        try {
+            // 下游异常由全局业务异常处理器负责，不能误写成“鉴权服务不可用”。
+            filterChain.doFilter(request, response);
+        } finally {
+            MDC.remove("userId");
         }
     }
 }

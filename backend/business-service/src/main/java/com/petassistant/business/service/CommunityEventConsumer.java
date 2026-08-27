@@ -8,6 +8,7 @@ import com.petassistant.business.data.mapper.CommunityGovernanceMapper;
 import com.petassistant.business.data.mapper.CommunityMediaMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -42,20 +43,25 @@ public class CommunityEventConsumer {
     @RabbitListener(queues = "${app.community.rabbit-queue}", autoStartup = "${app.community.rabbit-listener-enabled:true}")
     public void consume(String json) throws Exception {
         CommunityEventPayload event = objectMapper.readValue(json, CommunityEventPayload.class);
-        // INSERT IGNORE 返回 0 表示该消费者已经提交过相同 eventId，可以直接确认消息。
-        if (governanceMapper.claimEvent(event.eventId(), CONSUMER_NAME, Instant.now()) == 0) return;
+        MDC.put("eventId", event.eventId());
+        try {
+            // INSERT IGNORE 返回 0 表示该消费者已经提交过相同 eventId，可以直接确认消息。
+            if (governanceMapper.claimEvent(event.eventId(), CONSUMER_NAME, Instant.now()) == 0) return;
 
-        switch (event.eventType()) {
-            case "MEDIA_CONFIRMED" -> mediaMapper.markProcessingReady(event.aggregateId());
-            case "COMMUNITY_REPOSTED", "COMMUNITY_REPOST_REMOVED" ->
-                    governanceCache.synchronizeRepost(governanceMapper.findRepostById(event.aggregateId()));
-            case "COMMUNITY_MUTE_ENABLED", "COMMUNITY_MUTE_DISABLED",
-                 "COMMUNITY_BLOCK_ENABLED", "COMMUNITY_BLOCK_DISABLED" ->
-                    governanceCache.synchronizeRelation(governanceMapper.findRelationById(event.aggregateId()));
-            case "RECOMMENDATION_NOT_INTERESTED", "RECOMMENDATION_FEEDBACK_REVOKED" ->
-                    governanceCache.synchronizeFeedback(governanceMapper.findFeedbackById(event.aggregateId()));
-            default -> log.debug("Community event {} has no asynchronous projection", event.eventType());
+            switch (event.eventType()) {
+                case "MEDIA_CONFIRMED" -> mediaMapper.markProcessingReady(event.aggregateId());
+                case "COMMUNITY_REPOSTED", "COMMUNITY_REPOST_REMOVED" ->
+                        governanceCache.synchronizeRepost(governanceMapper.findRepostById(event.aggregateId()));
+                case "COMMUNITY_MUTE_ENABLED", "COMMUNITY_MUTE_DISABLED",
+                     "COMMUNITY_BLOCK_ENABLED", "COMMUNITY_BLOCK_DISABLED" ->
+                        governanceCache.synchronizeRelation(governanceMapper.findRelationById(event.aggregateId()));
+                case "RECOMMENDATION_NOT_INTERESTED", "RECOMMENDATION_FEEDBACK_REVOKED" ->
+                        governanceCache.synchronizeFeedback(governanceMapper.findFeedbackById(event.aggregateId()));
+                default -> log.debug("Community event {} has no asynchronous projection", event.eventType());
+            }
+            log.info("Community event {} ({}) processed", event.eventId(), event.eventType());
+        } finally {
+            MDC.remove("eventId");
         }
-        log.info("Community event {} ({}) processed", event.eventId(), event.eventType());
     }
 }

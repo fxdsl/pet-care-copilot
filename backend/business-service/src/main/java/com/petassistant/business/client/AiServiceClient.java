@@ -11,6 +11,8 @@ import com.petassistant.business.data.dto.internal.AiAgentResponse;
 import com.petassistant.business.data.dto.internal.AiStreamEvent;
 import com.petassistant.business.exception.AiServiceUnavailableException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.resilience4j.bulkhead.annotation.Bulkhead;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -39,7 +41,10 @@ public class AiServiceClient {
     /**
      * 消费 FastAPI SSE，并返回 result 事件中的最终响应。
      * 网络层逐行处理，避免把整段回答缓冲完后才交给浏览器。
+     * 流已经向浏览器发送片段后不能自动重试，否则会重复片段和模型计费。
      */
+    @CircuitBreaker(name = "aiService")
+    @Bulkhead(name = "aiService", type = Bulkhead.Type.SEMAPHORE)
     public AiAgentResponse answerStreaming(AiAgentRequest request, Consumer<AiStreamEvent> listener) {
         AtomicReference<AiAgentResponse> result = new AtomicReference<>();
         try {
@@ -93,7 +98,10 @@ public class AiServiceClient {
 
     /**
      * 将问题和候选知识分块发送给 FastAPI，获得排序后的来源和答案。
+     * 通用模型调用不自动重试，避免一次问题消耗两次百炼额度。
      */
+    @CircuitBreaker(name = "aiService")
+    @Bulkhead(name = "aiService", type = Bulkhead.Type.SEMAPHORE)
     public AiAgentResponse answer(AiAgentRequest request) {
         try {
             AiAgentResponse response = aiRestClient.post()

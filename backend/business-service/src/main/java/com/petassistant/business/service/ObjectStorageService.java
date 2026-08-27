@@ -11,6 +11,9 @@ import io.minio.MinioClient;
 import io.minio.StatObjectArgs;
 import io.minio.StatObjectResponse;
 import io.minio.http.Method;
+import io.github.resilience4j.bulkhead.annotation.Bulkhead;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import io.github.resilience4j.retry.annotation.Retry;
 import org.springframework.stereotype.Service;
 
 /** MinIO 协议适配层，业务服务不直接依赖 SDK 参数对象。 */
@@ -26,6 +29,9 @@ public class ObjectStorageService {
     }
 
     /** 创建私有 Bucket 并生成只允许 PUT 指定对象的短期地址。 */
+    @Retry(name = "minio")
+    @CircuitBreaker(name = "minio")
+    @Bulkhead(name = "minio", type = Bulkhead.Type.SEMAPHORE)
     public PresignedUrl createUploadUrl(String objectKey) {
         try {
             ensureBucket();
@@ -42,6 +48,9 @@ public class ObjectStorageService {
     }
 
     /** 确认阶段从对象存储读取真实大小，不能相信浏览器再次提交的大小。 */
+    @Retry(name = "minio")
+    @CircuitBreaker(name = "minio")
+    @Bulkhead(name = "minio", type = Bulkhead.Type.SEMAPHORE)
     public StoredObject stat(String objectKey) {
         try {
             StatObjectResponse response = client.statObject(StatObjectArgs.builder()
@@ -53,6 +62,9 @@ public class ObjectStorageService {
     }
 
     /** 私有对象只通过一分钟下载地址访问，帖子删除后不能再申请新地址。 */
+    @Retry(name = "minio")
+    @CircuitBreaker(name = "minio")
+    @Bulkhead(name = "minio", type = Bulkhead.Type.SEMAPHORE)
     public PresignedUrl createDownloadUrl(String objectKey) {
         try {
             String url = client.getPresignedObjectUrl(GetPresignedObjectUrlArgs.builder()

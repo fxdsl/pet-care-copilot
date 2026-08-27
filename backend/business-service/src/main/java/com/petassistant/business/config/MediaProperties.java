@@ -14,6 +14,8 @@ public class MediaProperties {
     private String bucket = "pet-community";
     private Duration uploadUrlTtl = Duration.ofMinutes(10);
     private Duration downloadUrlTtl = Duration.ofMinutes(1);
+    private Duration connectTimeout = Duration.ofSeconds(2);
+    private Duration readTimeout = Duration.ofSeconds(5);
     private long maxImageBytes = 10 * 1024 * 1024;
     private long maxVideoBytes = 50 * 1024 * 1024;
 
@@ -29,6 +31,10 @@ public class MediaProperties {
     public void setUploadUrlTtl(Duration uploadUrlTtl) { this.uploadUrlTtl = uploadUrlTtl; }
     public Duration getDownloadUrlTtl() { return downloadUrlTtl; }
     public void setDownloadUrlTtl(Duration downloadUrlTtl) { this.downloadUrlTtl = downloadUrlTtl; }
+    public Duration getConnectTimeout() { return connectTimeout; }
+    public void setConnectTimeout(Duration connectTimeout) { this.connectTimeout = connectTimeout; }
+    public Duration getReadTimeout() { return readTimeout; }
+    public void setReadTimeout(Duration readTimeout) { this.readTimeout = readTimeout; }
     public long getMaxImageBytes() { return maxImageBytes; }
     public void setMaxImageBytes(long maxImageBytes) { this.maxImageBytes = maxImageBytes; }
     public long getMaxVideoBytes() { return maxVideoBytes; }

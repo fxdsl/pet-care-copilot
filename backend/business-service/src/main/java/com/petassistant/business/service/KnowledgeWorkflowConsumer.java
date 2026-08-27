@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.petassistant.business.data.dto.internal.CommunityEventPayload;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.stereotype.Service;
 
@@ -24,6 +25,7 @@ public class KnowledgeWorkflowConsumer {
     @RabbitListener(queues = "${app.knowledge.rabbit-queue}", autoStartup = "${app.knowledge.rabbit-listener-enabled:true}")
     public void consume(String json) throws Exception {
         CommunityEventPayload event = objectMapper.readValue(json, CommunityEventPayload.class);
+        MDC.put("eventId", event.eventId());
         try {
             if ("KNOWLEDGE_PRECHECK_REQUESTED".equals(event.eventType())) {
                 service.processPrecheck(event.aggregateId());
@@ -33,6 +35,8 @@ public class KnowledgeWorkflowConsumer {
         } catch (RuntimeException error) {
             log.warn("Knowledge workflow {} failed for {}: {}", event.eventType(), event.aggregateId(), error.toString());
             service.markFailed(event.aggregateId(), error.getMessage());
+        } finally {
+            MDC.remove("eventId");
         }
     }
 }

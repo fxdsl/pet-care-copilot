@@ -17,6 +17,9 @@ import com.petassistant.business.config.SearchProperties;
 import com.petassistant.business.data.dto.internal.OpenSearchHit;
 import com.petassistant.business.data.dto.internal.OpenSearchPage;
 import com.petassistant.business.data.dto.internal.SearchSourceDocument;
+import io.github.resilience4j.bulkhead.annotation.Bulkhead;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import io.github.resilience4j.retry.annotation.Retry;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
@@ -55,6 +58,8 @@ public class SearchIndexClient {
     }
 
     /** 删除旧索引并按当前向量维度创建新的公开索引。 */
+    @CircuitBreaker(name = "openSearch")
+    @Bulkhead(name = "openSearch", type = Bulkhead.Type.SEMAPHORE)
     public void recreateIndex() {
         deleteIndex();
         Map<String, Object> vectorMethod = Map.of(
@@ -96,6 +101,9 @@ public class SearchIndexClient {
     }
 
     /** 以“类型:业务主键”作为稳定文档 ID，重复消费不会产生重复数据。 */
+    @Retry(name = "openSearchWrite")
+    @CircuitBreaker(name = "openSearch")
+    @Bulkhead(name = "openSearch", type = Bulkhead.Type.SEMAPHORE)
     public void upsert(SearchSourceDocument source, List<Double> embedding) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("id", source.id());
@@ -117,6 +125,9 @@ public class SearchIndexClient {
     }
 
     /** 内容撤回、删除或失去公开资格时立即移除搜索副本。 */
+    @Retry(name = "openSearchWrite")
+    @CircuitBreaker(name = "openSearch")
+    @Bulkhead(name = "openSearch", type = Bulkhead.Type.SEMAPHORE)
     public void delete(String type, String id) {
         try {
             restClient.delete().uri("/{index}/_doc/{id}", properties.indexName(), documentId(type, id))
@@ -127,6 +138,9 @@ public class SearchIndexClient {
     }
 
     /** BM25 为主、BGE 向量为辅，使用倒数排名融合得到稳定的混合排序。 */
+    @Retry(name = "openSearchRead")
+    @CircuitBreaker(name = "openSearch")
+    @Bulkhead(name = "openSearch", type = Bulkhead.Type.SEMAPHORE)
     public OpenSearchPage search(
             String query,
             String type,

@@ -1,0 +1,10 @@
+apiVersion: 1
+providers:
+  - name: pet-care-copilot
+    orgId: 1
+    folder: Pet Care Copilot
+    type: file
+    disableDeletion: true
+    editable: true
+    options:
+      path: /var/lib/grafana/dashboards
