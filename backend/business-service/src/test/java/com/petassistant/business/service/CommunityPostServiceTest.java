@@ -44,7 +44,7 @@ class CommunityPostServiceTest {
                     invocation.getArgument(0), "user-1", "alice", "爱丽丝",
                     null, null, null, null, "幼猫换粮", "记录正文", null,
                     null, null,
-                    "DRAFT", 0, 0, 0, 0, 1, null, now, now
+                    "DRAFT", 0, 0, 0, 0, 0, 1, null, now, now
             );
         });
 

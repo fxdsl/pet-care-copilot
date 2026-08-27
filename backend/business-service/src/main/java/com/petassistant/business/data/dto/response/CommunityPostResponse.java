@@ -23,6 +23,7 @@ public record CommunityPostResponse(
         long likeCount,
         long commentCount,
         long favoriteCount,
+        long repostCount,
         int version,
         Instant publishedAt,
         Instant createdAt,
@@ -30,5 +31,6 @@ public record CommunityPostResponse(
         List<CommunityMediaResponse> media,
         boolean viewerLiked,
         boolean viewerFavorited,
-        boolean viewerFollowsAuthor
+        boolean viewerFollowsAuthor,
+        boolean viewerReposted
 ) { }

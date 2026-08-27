@@ -30,7 +30,7 @@
         SELECT id, aggregate_type, aggregate_id, event_type, payload_json, status,
                attempts, next_attempt_at, created_at, published_at
         FROM integration_outbox
-        WHERE status IN ('PENDING', 'FAILED', 'PROCESSING') AND next_attempt_at &lt;= #{now}
+        WHERE status IN ('PENDING', 'FAILED', 'PROCESSING') AND attempts &lt; 8 AND next_attempt_at &lt;= #{now}
         ORDER BY created_at
         LIMIT #{limit}
     </select>

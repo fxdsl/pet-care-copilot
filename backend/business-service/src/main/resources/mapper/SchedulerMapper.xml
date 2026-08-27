@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.petassistant.business.data.mapper.SchedulerMapper">
+
+    <insert id="insertExecution">
+        INSERT INTO scheduled_job_execution
+            (id, job_name, batch_key, status, attempts, processed_count, error_message,
+             started_at, finished_at, next_attempt_at)
+        VALUES
+            (#{id}, #{jobName}, #{batchKey}, #{status}, #{attempts}, #{processedCount}, #{errorMessage},
+             #{startedAt}, #{finishedAt}, #{nextAttemptAt})
+    </insert>
+
+    <update id="finishExecution">
+        UPDATE scheduled_job_execution
+        SET status = #{status}, attempts = #{attempts}, processed_count = #{processedCount},
+            error_message = #{errorMessage}, finished_at = #{finishedAt}, next_attempt_at = NULL
+        WHERE id = #{id}
+    </update>
+
+    <insert id="insertTrendSnapshot">
+        INSERT INTO community_trend_snapshot (snapshot_at, post_id, rank_no, score, reason)
+        SELECT #{snapshotAt}, ranked.id,
+               ROW_NUMBER() OVER (ORDER BY ranked.score DESC),
+               ROUND(ranked.score, 6), '互动质量与时间衰减综合排序'
+        FROM (
+            SELECT id,
+                   (like_count * 3 + comment_count * 4 + favorite_count * 5 + repost_count * 6
+                    + LOG(1 + view_count)) /
+                   POW(GREATEST(TIMESTAMPDIFF(MINUTE, published_at, #{snapshotAt}) / 60.0, 0) + 2, 1.15) AS score
+            FROM community_post
+            WHERE status = 'PUBLISHED' AND published_at IS NOT NULL
+            ORDER BY score DESC
+            LIMIT #{limit}
+        ) ranked
+    </insert>
+
+    <update id="expireKnowledge">
+        UPDATE knowledge_document
+        SET status = 'EXPIRED', updated_at = #{now}
+        WHERE status = 'READY' AND expires_at IS NOT NULL AND expires_at &lt;= #{now}
+    </update>
+
+    <update id="retryStuckSearchEvents">
+        UPDATE integration_outbox
+        SET status = 'FAILED', next_attempt_at = #{now}
+        WHERE aggregate_type LIKE 'SEARCH\_%' ESCAPE '\\'
+          AND status = 'PROCESSING' AND attempts &lt; 8 AND next_attempt_at &lt;= #{now}
+    </update>
+
+    <insert id="enqueueOutboxManualReviews">
+        INSERT IGNORE INTO integration_event_manual_review (event_id, reason, status, created_at)
+        SELECT id, CONCAT('Outbox 自动投递已达到 ', attempts, ' 次'), 'PENDING', #{now}
+        FROM integration_outbox
+        WHERE status IN ('FAILED', 'PROCESSING') AND attempts &gt;= 8
+    </insert>
+
+    <insert id="archiveAdminAudits">
+        INSERT IGNORE INTO admin_audit_log_archive
+            (id, actor_user_id, target_user_id, action, before_value, after_value, created_at, archived_at)
+        SELECT id, actor_user_id, target_user_id, action, before_value, after_value, created_at, #{archivedAt}
+        FROM admin_audit_log WHERE created_at &lt; #{cutoff}
+    </insert>
+
+    <delete id="deleteArchivedAdminAudits">
+        DELETE source FROM admin_audit_log source
+        INNER JOIN admin_audit_log_archive archive ON archive.id = source.id
+        WHERE source.created_at &lt; #{cutoff}
+    </delete>
+</mapper>

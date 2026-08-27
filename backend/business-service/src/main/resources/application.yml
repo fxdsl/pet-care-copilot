@@ -44,6 +44,11 @@ spring:
           enabled: true
           max-attempts: 3
           multiplier: 2.0
+  quartz:
+    # 每个实例只保存本地触发器，真正执行前由 Redisson 分布式锁竞争单实例资格。
+    job-store-type: memory
+    properties:
+      org.quartz.threadPool.threadCount: 3
 
 # MyBatis 只负责数据读写；表结构版本仍由 Flyway 管理。
 mybatis:

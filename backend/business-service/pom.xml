@@ -59,6 +59,11 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-amqp</artifactId>
         </dependency>
+        <!-- 第十三周使用 Quartz 表达可审计的周期任务；业务单实例执行再由 Redisson 锁保护。 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-quartz</artifactId>
+        </dependency>
         <!-- MinIO 使用私有 Bucket 和短期预签名地址，业务表只保存对象 Key。 -->
         <dependency>
             <groupId>io.minio</groupId>

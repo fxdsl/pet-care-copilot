@@ -18,6 +18,7 @@ public record CommunityPostEntity(
         long likeCount,
         long commentCount,
         long favoriteCount,
+        long repostCount,
         int version,
         Instant publishedAt,
         Instant createdAt,

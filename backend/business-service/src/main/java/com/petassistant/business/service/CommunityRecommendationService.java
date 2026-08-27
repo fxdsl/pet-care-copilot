@@ -115,6 +115,7 @@ public class CommunityRecommendationService {
         double engagement = post.likeCount() * 3.0  // 点赞权重
             + post.commentCount() * 4.0// 评论权重
             + post.favoriteCount() * 5.0 // 收藏权重
+            + post.repostCount() * 6.0 // 转发代表更强的传播意愿
             + Math.log1p(post.viewCount());// 浏览量权重（对数压缩）
         double score = engagement / Math.pow(ageHours + 2.0, 1.15);
         try {
@@ -175,6 +176,7 @@ public class CommunityRecommendationService {
     private static double databaseScore(CommunityPostView post) {
         double ageHours = Math.max(0, Duration.between(post.publishedAt(), Instant.now()).toMinutes() / 60.0);
         return (post.likeCount() * 3.0 + post.commentCount() * 4.0 + post.favoriteCount() * 5.0
+                + post.repostCount() * 6.0
                 + Math.log1p(post.viewCount())) / Math.pow(ageHours + 2.0, 1.15);
     }
 

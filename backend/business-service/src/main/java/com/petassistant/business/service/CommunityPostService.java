@@ -70,7 +70,7 @@ public class CommunityPostService {
                 postId, userId, blankToNull(request.petProfileId()), blankToNull(request.topicId()),
                 request.title().trim(), request.content().trim(), blankToNull(request.region()),
                 request.latitude(), request.longitude(),
-                "DRAFT", 0, 0, 0, 0, 1, null, now, now
+                "DRAFT", 0, 0, 0, 0, 0, 1, null, now, now
         ));
         //绑定媒体文件实体到帖子实体
         replaceMedia(userId, postId, mediaIds);
@@ -166,7 +166,9 @@ public class CommunityPostService {
     /** 当前用户详情额外附带点赞、收藏和作者关注状态；这些字段不进入共享详情缓存。 */
     @Transactional(readOnly = true)
     public CommunityPostResponse publicDetail(String userId, String postId) {
-        return socialService.decoratePosts(userId, List.of(publicDetail(postId))).get(0);
+        List<CommunityPostResponse> visible = socialService.decoratePosts(userId, List.of(publicDetail(postId)));
+        if (visible.isEmpty()) throw new CommunityPostNotFoundException();
+        return visible.get(0);
     }
 
     @Transactional(readOnly = true)
@@ -292,8 +294,8 @@ public class CommunityPostService {
                 view.petProfileId(), view.petName(), view.topicId(), view.topicName(),
                 view.title(), view.content(), view.region(), view.latitude(), view.longitude(),
                 view.status(), view.viewCount(),
-                view.likeCount(), view.commentCount(), view.favoriteCount(), view.version(),
-                view.publishedAt(), view.createdAt(), view.updatedAt(), media, false, false, false
+                view.likeCount(), view.commentCount(), view.favoriteCount(), view.repostCount(), view.version(),
+                view.publishedAt(), view.createdAt(), view.updatedAt(), media, false, false, false, false
         );
     }
 
@@ -310,9 +312,9 @@ public class CommunityPostService {
                 response.petProfileId(), response.petName(), response.topicId(), response.topicName(),
                 response.title(), response.content(), response.region(), response.latitude(), response.longitude(),
                 response.status(), viewCount,
-                response.likeCount(), response.commentCount(), response.favoriteCount(), response.version(),
+                response.likeCount(), response.commentCount(), response.favoriteCount(), response.repostCount(), response.version(),
                 response.publishedAt(), response.createdAt(), response.updatedAt(), response.media(),
-                response.viewerLiked(), response.viewerFavorited(), response.viewerFollowsAuthor()
+                response.viewerLiked(), response.viewerFavorited(), response.viewerFollowsAuthor(), response.viewerReposted()
         );
     }
 

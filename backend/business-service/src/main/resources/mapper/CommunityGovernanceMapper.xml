@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.petassistant.business.data.mapper.CommunityGovernanceMapper">
+
+    <insert id="upsertRepost">
+        INSERT INTO community_post_repost (id, post_id, user_id, quote_content, active, created_at, updated_at)
+        VALUES (#{id}, #{postId}, #{userId}, #{quoteContent}, #{active}, #{createdAt}, #{updatedAt})
+        ON DUPLICATE KEY UPDATE quote_content = VALUES(quote_content), active = VALUES(active), updated_at = VALUES(updated_at)
+    </insert>
+    <select id="findRepost" resultType="com.petassistant.business.data.entity.CommunityRepostEntity">
+        SELECT id, post_id, user_id, quote_content, active, created_at, updated_at
+        FROM community_post_repost WHERE post_id = #{postId} AND user_id = #{userId}
+    </select>
+    <select id="findRepostById" resultType="com.petassistant.business.data.entity.CommunityRepostEntity">
+        SELECT id, post_id, user_id, quote_content, active, created_at, updated_at
+        FROM community_post_repost WHERE id = #{id}
+    </select>
+    <update id="synchronizeRepostCount">
+        UPDATE community_post p SET repost_count = (
+            SELECT COUNT(*) FROM community_post_repost r WHERE r.post_id = p.id AND r.active = TRUE
+        ) WHERE p.id = #{postId}
+    </update>
+    <select id="countReposts" resultType="long">
+        SELECT COUNT(*) FROM community_post_repost WHERE post_id = #{postId} AND active = TRUE
+    </select>
+    <select id="findRepostedPostIds" resultType="string">
+        SELECT post_id FROM community_post_repost WHERE user_id = #{userId} AND active = TRUE AND post_id IN
+        <foreach collection="postIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+    </select>
+    <select id="findRepostCounts" resultType="com.petassistant.business.data.dto.internal.PostCountRow">
+        SELECT post_id, COUNT(*) AS count FROM community_post_repost
+        WHERE active = TRUE AND post_id IN
+        <foreach collection="postIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+        GROUP BY post_id
+    </select>
+
+    <insert id="upsertRelation">
+        INSERT INTO community_user_relation_control
+            (id, actor_user_id, target_user_id, relation_type, active, created_at, updated_at)
+        VALUES (#{id}, #{actorUserId}, #{targetUserId}, #{relationType}, #{active}, #{createdAt}, #{updatedAt})
+        ON DUPLICATE KEY UPDATE active = VALUES(active), updated_at = VALUES(updated_at)
+    </insert>
+    <select id="findRelation" resultType="com.petassistant.business.data.entity.CommunityRelationControlEntity">
+        SELECT id, actor_user_id, target_user_id, relation_type, active, created_at, updated_at
+        FROM community_user_relation_control
+        WHERE actor_user_id = #{actorUserId} AND target_user_id = #{targetUserId} AND relation_type = #{relationType}
+    </select>
+    <select id="findRelationById" resultType="com.petassistant.business.data.entity.CommunityRelationControlEntity">
+        SELECT id, actor_user_id, target_user_id, relation_type, active, created_at, updated_at
+        FROM community_user_relation_control WHERE id = #{id}
+    </select>
+    <select id="existsBlockEitherDirection" resultType="boolean">
+        SELECT EXISTS(SELECT 1 FROM community_user_relation_control
+          WHERE relation_type = 'BLOCK' AND active = TRUE
+            AND ((actor_user_id = #{firstUserId} AND target_user_id = #{secondUserId})
+              OR (actor_user_id = #{secondUserId} AND target_user_id = #{firstUserId})))
+    </select>
+    <select id="findExcludedAuthorIds" resultType="string">
+        SELECT target_user_id FROM community_user_relation_control
+        WHERE actor_user_id = #{viewerId} AND active = TRUE AND relation_type IN ('MUTE', 'BLOCK')
+        UNION
+        SELECT actor_user_id FROM community_user_relation_control
+        WHERE target_user_id = #{viewerId} AND active = TRUE AND relation_type = 'BLOCK'
+    </select>
+
+    <insert id="upsertFeedback">
+        INSERT INTO community_recommendation_feedback
+            (id, user_id, post_id, feedback_type, active, created_at, updated_at)
+        VALUES (#{id}, #{userId}, #{postId}, #{feedbackType}, #{active}, #{createdAt}, #{updatedAt})
+        ON DUPLICATE KEY UPDATE active = VALUES(active), updated_at = VALUES(updated_at)
+    </insert>
+    <select id="findFeedback" resultType="com.petassistant.business.data.entity.RecommendationFeedbackEntity">
+        SELECT id, user_id, post_id, feedback_type, active, created_at, updated_at
+        FROM community_recommendation_feedback
+        WHERE user_id = #{userId} AND post_id = #{postId} AND feedback_type = 'NOT_INTERESTED'
+    </select>
+    <select id="findFeedbackById" resultType="com.petassistant.business.data.entity.RecommendationFeedbackEntity">
+        SELECT id, user_id, post_id, feedback_type, active, created_at, updated_at
+        FROM community_recommendation_feedback WHERE id = #{id}
+    </select>
+    <select id="findNotInterestedPostIds" resultType="string">
+        SELECT post_id FROM community_recommendation_feedback
+        WHERE user_id = #{userId} AND feedback_type = 'NOT_INTERESTED' AND active = TRUE AND post_id IN
+        <foreach collection="postIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+    </select>
+    <select id="findPreferredTopicIds" resultType="string">
+        SELECT p.topic_id FROM community_post_like l
+        JOIN community_post p ON p.id = l.post_id
+        WHERE l.user_id = #{userId} AND p.topic_id IS NOT NULL
+        GROUP BY p.topic_id ORDER BY COUNT(*) DESC LIMIT #{limit}
+    </select>
+    <select id="findPetTypes" resultType="string">
+        SELECT DISTINCT pet_type FROM pet_profile WHERE user_id = #{userId}
+    </select>
+    <select id="findPostPetTypes" resultType="com.petassistant.business.data.dto.internal.PostValueRow">
+        SELECT p.id AS post_id, pet.pet_type AS value
+        FROM community_post p JOIN pet_profile pet ON pet.id = p.pet_profile_id
+        WHERE p.id IN
+        <foreach collection="postIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+    </select>
+
+    <insert id="claimEvent">
+        INSERT IGNORE INTO processed_integration_event (event_id, consumer_name, processed_at)
+        VALUES (#{eventId}, #{consumerName}, #{processedAt})
+    </insert>
+</mapper>

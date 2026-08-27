@@ -30,6 +30,7 @@ export interface CommunityPost {
   likeCount: number
   commentCount: number
   favoriteCount: number
+  repostCount: number
   version: number
   publishedAt: string | null
   createdAt: string
@@ -38,9 +39,14 @@ export interface CommunityPost {
   viewerLiked: boolean
   viewerFavorited: boolean
   viewerFollowsAuthor: boolean
+  viewerReposted: boolean
+  /** 仅“为你推荐”接口填充，不属于帖子持久化字段。 */
+  recommendationReason?: string
 }
 export interface PostPage { items: CommunityPost[]; page: number; size: number; total: number }
-export type CommunityFeed = 'LATEST' | 'HOT' | 'FOLLOWING' | 'NEARBY'
+export type CommunityFeed = 'FOR_YOU' | 'LATEST' | 'HOT' | 'FOLLOWING' | 'NEARBY'
+export interface RecommendationItem { post: CommunityPost; score: number; reason: string; notInterested: boolean }
+export interface RecommendationPage { items: RecommendationItem[]; page: number; size: number; total: number }
 export interface CommunityPostInput {
   title: string
   content: string
@@ -178,9 +184,25 @@ export const setPostLike = (postId: string, active: boolean) => apiRequest<Commu
 export const setPostFavorite = (postId: string, active: boolean) => apiRequest<CommunityReaction>(
   `/api/v1/community/posts/${postId}/favorite`, { method: active ? 'PUT' : 'DELETE' },
 )
+export const setPostRepost = (postId: string, active: boolean, quoteContent?: string) =>
+  apiRequest<CommunityReaction>(`/api/v1/community/posts/${postId}/repost`, {
+    method: active ? 'PUT' : 'DELETE',
+    body: active ? JSON.stringify({ quoteContent: quoteContent || null }) : undefined,
+  })
 export const setUserFollow = (userId: string, active: boolean) => apiRequest<{ following: boolean; followerCount: number }>(
   `/api/v1/community/users/${userId}/follow`, { method: active ? 'PUT' : 'DELETE' },
 )
+export const setUserRelation = (userId: string, relationType: 'mute' | 'block', active: boolean) =>
+  apiRequest<{ targetUserId: string; relationType: string; active: boolean }>(
+    `/api/v1/community/users/${userId}/${relationType}`, { method: active ? 'PUT' : 'DELETE' },
+  )
+export const listRecommendations = (page = 0, size = 20) => apiRequest<RecommendationPage>(
+  `/api/v1/community/recommendations?page=${page}&size=${size}`,
+)
+export const setRecommendationNotInterested = (postId: string, active: boolean) =>
+  apiRequest<{ postId: string; active: boolean }>(
+    `/api/v1/community/recommendations/${postId}/not-interested`, { method: active ? 'PUT' : 'DELETE' },
+  )
 
 export const getPublicUserProfile = (userId: string) => apiRequest<PublicUserProfile>(
   `/api/v1/community/users/${userId}/profile`,

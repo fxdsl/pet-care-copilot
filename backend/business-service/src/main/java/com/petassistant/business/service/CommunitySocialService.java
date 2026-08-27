@@ -26,6 +26,7 @@ import com.petassistant.business.data.entity.CommunityCommentEntity;
 import com.petassistant.business.data.entity.CommunityReportEntity;
 import com.petassistant.business.data.entity.UserEntity;
 import com.petassistant.business.data.mapper.CommunityPostMapper;
+import com.petassistant.business.data.mapper.CommunityGovernanceMapper;
 import com.petassistant.business.data.mapper.CommunitySocialMapper;
 import com.petassistant.business.data.mapper.UserMapper;
 import com.petassistant.business.exception.CommunityInteractionConflictException;
@@ -39,6 +40,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class CommunitySocialService {
 
     private final CommunitySocialMapper mapper;
+    private final CommunityGovernanceMapper governanceMapper;
     private final CommunityPostMapper postMapper;
     private final UserMapper userMapper;
     private final CommunityPostCacheService postCache;
@@ -49,6 +51,7 @@ public class CommunitySocialService {
 
     public CommunitySocialService(
             CommunitySocialMapper mapper,
+            CommunityGovernanceMapper governanceMapper,
             CommunityPostMapper postMapper,
             UserMapper userMapper,
             CommunityPostCacheService postCache,
@@ -58,6 +61,7 @@ public class CommunitySocialService {
             OutboxService outboxService
     ) {
         this.mapper = mapper;
+        this.governanceMapper = governanceMapper;
         this.postMapper = postMapper;
         this.userMapper = userMapper;
         this.postCache = postCache;
@@ -71,6 +75,7 @@ public class CommunitySocialService {
     public CommunityReactionResponse like(String userId, String postId, boolean active) {
         //判断帖子是否存在且为公开状态
         requirePublicPost(postId);
+        ensurePostInteractionAllowed(userId, postId, "点赞");
         //判断用户是点赞还是取消点赞
         //点赞
         int changed;
@@ -104,6 +109,7 @@ public class CommunitySocialService {
     @Transactional
     public CommunityReactionResponse favorite(String userId, String postId, boolean active) {
         requirePublicPost(postId);
+        ensurePostInteractionAllowed(userId, postId, "收藏");
         if (active) mapper.insertFavorite(postId, userId, Instant.now());
         else mapper.deleteFavorite(postId, userId);
         mapper.synchronizeFavoriteCount(postId);
@@ -118,6 +124,9 @@ public class CommunitySocialService {
     public CommunityFollowResponse follow(String userId, String followedId, boolean active) {
         if (userId.equals(followedId)) {
             throw new IllegalArgumentException("不能关注自己");
+        }
+        if (active && governanceMapper.existsBlockEitherDirection(userId, followedId)) {
+            throw new IllegalArgumentException("拉黑关系生效期间不能关注该用户");
         }
         UserEntity followed = userMapper.findById(followedId);
         if (followed == null || !"ACTIVE".equals(followed.status())) {
@@ -150,6 +159,10 @@ public class CommunitySocialService {
     ) {
         //检查帖子是否存在且为公开状态
         requirePublicPost(postId);
+        var post = postMapper.findPublicView(postId);
+        if (post != null && governanceMapper.existsBlockEitherDirection(userId, post.authorId())) {
+            throw new IllegalArgumentException("拉黑关系生效期间不能评论该用户内容");
+        }
         //检查回复的评论是否存在且属于当前帖子
         String parentId = blankToNull(request.parentId());
         //一级评论的根评论ID,根评论自身为null
@@ -185,7 +198,6 @@ public class CommunitySocialService {
         mapper.synchronizeCommentCount(postId);
         //刷新帖子缓存，包含删除缓存与更新热度分数
         refreshPostCaches(postId);
-        var post = postMapper.findPublicView(postId);
         String recipientId = replyRecipientId == null ? post.authorId() : replyRecipientId;
         messageService.createNotification(
                 recipientId, userId, "COMMENT", "POST", postId,
@@ -200,9 +212,11 @@ public class CommunitySocialService {
         requirePublicPost(postId);
         int safePage = Math.max(0, page);
         int safeSize = Math.min(Math.max(1, size), 100);
+        Set<String> excludedAuthors = new HashSet<>(governanceMapper.findExcludedAuthorIds(userId));
         List<CommunityCommentResponse> items = mapper.findComments(postId, safePage * safeSize, safeSize)
-                .stream().map(view -> toCommentResponse(view, userId)).toList();
-        return new CommunityCommentPageResponse(items, safePage, safeSize, mapper.countComments(postId));
+                .stream().filter(view -> !excludedAuthors.contains(view.authorId()))
+                .map(view -> toCommentResponse(view, userId)).toList();
+        return new CommunityCommentPageResponse(items, safePage, safeSize, items.size());
     }
 
     @Transactional
@@ -318,13 +332,21 @@ public class CommunitySocialService {
     @Transactional(readOnly = true)
     public List<CommunityPostResponse> decoratePosts(String userId, List<CommunityPostResponse> posts) {
         if (posts.isEmpty()) return posts;
-        List<String> postIds = posts.stream().map(CommunityPostResponse::id).toList();
-        List<String> authorIds = posts.stream().map(CommunityPostResponse::authorId).distinct().toList();
+        // 静音只影响当前查看者，拉黑则双向隐藏；MySQL 是关系事实源，缓存丢失也不会泄露内容。
+        Set<String> excludedAuthors = new HashSet<>(governanceMapper.findExcludedAuthorIds(userId));
+        List<CommunityPostResponse> visiblePosts = posts.stream()
+                .filter(post -> !excludedAuthors.contains(post.authorId()))
+                .toList();
+        if (visiblePosts.isEmpty()) return visiblePosts;
+        List<String> postIds = visiblePosts.stream().map(CommunityPostResponse::id).toList();
+        List<String> authorIds = visiblePosts.stream().map(CommunityPostResponse::authorId).distinct().toList();
         Set<String> likes = new HashSet<>(mapper.findLikedPostIds(userId, postIds));
         Set<String> favorites = new HashSet<>(mapper.findFavoritePostIds(userId, postIds));
         Set<String> follows = new HashSet<>(mapper.findFollowedUserIds(userId, authorIds));
-        return posts.stream().map(post -> withViewerState(
-                post, likes.contains(post.id()), favorites.contains(post.id()), follows.contains(post.authorId())
+        Set<String> reposts = new HashSet<>(governanceMapper.findRepostedPostIds(userId, postIds));
+        return visiblePosts.stream().map(post -> withViewerState(
+                post, likes.contains(post.id()), favorites.contains(post.id()), follows.contains(post.authorId()),
+                reposts.contains(post.id())
         )).toList();
     }
 
@@ -335,6 +357,14 @@ public class CommunitySocialService {
 
     private void requirePublicPost(String postId) {
         if (!mapper.existsPublicPost(postId)) throw new CommunityPostNotFoundException();
+    }
+
+    /** 拉黑是强关系控制，必须在写入互动记录之前检查，避免出现“看不见但能互动”的脏状态。 */
+    private void ensurePostInteractionAllowed(String userId, String postId, String action) {
+        var post = postMapper.findPublicView(postId);
+        if (post != null && governanceMapper.existsBlockEitherDirection(userId, post.authorId())) {
+            throw new IllegalArgumentException("拉黑关系生效期间不能" + action + "该用户内容");
+        }
     }
 
     private void validateReportTarget(String userId, String targetType, String targetId) {
@@ -369,14 +399,15 @@ public class CommunitySocialService {
             CommunityPostResponse post,
             boolean liked,
             boolean favorited,
-            boolean followsAuthor
+            boolean followsAuthor,
+            boolean reposted
     ) {
         return new CommunityPostResponse(
                 post.id(), post.authorId(), post.authorUsername(), post.authorDisplayName(), post.petProfileId(),
                 post.petName(), post.topicId(), post.topicName(), post.title(), post.content(), post.region(),
                 post.latitude(), post.longitude(), post.status(), post.viewCount(), post.likeCount(),
-                post.commentCount(), post.favoriteCount(), post.version(), post.publishedAt(), post.createdAt(),
-                post.updatedAt(), post.media(), liked, favorited, followsAuthor
+                post.commentCount(), post.favoriteCount(), post.repostCount(), post.version(), post.publishedAt(), post.createdAt(),
+                post.updatedAt(), post.media(), liked, favorited, followsAuthor, reposted
         );
     }
 

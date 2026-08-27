@@ -23,6 +23,7 @@ import com.petassistant.business.data.entity.DirectMessageEntity;
 import com.petassistant.business.data.entity.NotificationEntity;
 import com.petassistant.business.data.entity.UserEntity;
 import com.petassistant.business.data.mapper.MessageMapper;
+import com.petassistant.business.data.mapper.CommunityGovernanceMapper;
 import com.petassistant.business.data.mapper.UserMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,17 +45,20 @@ public class MessageService {
     );
 
     private final MessageMapper mapper;
+    private final CommunityGovernanceMapper governanceMapper;
     private final UserMapper userMapper;
     private final StringRedisTemplate redisTemplate;
     private final RealtimeEventService realtimeEventService;
 
     public MessageService(
             MessageMapper mapper,
+            CommunityGovernanceMapper governanceMapper,
             UserMapper userMapper,
             StringRedisTemplate redisTemplate,
             RealtimeEventService realtimeEventService
     ) {
         this.mapper = mapper;
+        this.governanceMapper = governanceMapper;
         this.userMapper = userMapper;
         this.redisTemplate = redisTemplate;
         this.realtimeEventService = realtimeEventService;
@@ -74,6 +78,8 @@ public class MessageService {
             String dedupeKey
     ) {
         if (recipientId == null || recipientId.equals(actorId)) return;
+        // 已拉黑的双方不再产生通知，避免通过通知侧信道继续骚扰对方。
+        if (actorId != null && governanceMapper.existsBlockEitherDirection(actorId, recipientId)) return;
         if (!NOTIFICATION_TYPES.contains(type)) throw new IllegalArgumentException("通知类型无效");
         NotificationEntity entity = new NotificationEntity(
                 UUID.randomUUID().toString(), recipientId, actorId, type, targetType, targetId,
@@ -179,6 +185,9 @@ public class MessageService {
         String recipientId = request.recipientId().trim();
         //不可以自己发送给自己。
         if (userId.equals(recipientId)) throw new IllegalArgumentException("不能给自己发送私信");
+        if (governanceMapper.existsBlockEitherDirection(userId, recipientId)) {
+            throw new IllegalArgumentException("拉黑关系生效期间不能发送私信");
+        }
         //验证接收者是否存在且可用
         UserEntity recipient = userMapper.findById(recipientId);
         if (recipient == null || !"ACTIVE".equals(recipient.status())) {

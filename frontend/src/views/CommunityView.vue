@@ -10,10 +10,14 @@ import {
   getCommunityPost,
   listCommunityComments,
   listCommunityPosts,
+  listRecommendations,
   listCommunityTopics,
   setPostFavorite,
   setPostLike,
+  setPostRepost,
+  setRecommendationNotInterested,
   setUserFollow,
+  setUserRelation,
   type CommunityComment,
   type CommunityFeed,
   type CommunityPost,
@@ -51,6 +55,7 @@ const showBackToTop = ref(false)
 let openPostRequestId = 0
 
 const feedOptions: { value: CommunityFeed; label: string; hint: string }[] = [
+  { value: 'FOR_YOU', label: '推荐', hint: '为你解释每一次推荐' },
   { value: 'LATEST', label: '最新', hint: '刚刚发生的新鲜事' },
   { value: 'HOT', label: '热门', hint: '正在被大家讨论' },
   { value: 'FOLLOWING', label: '关注', hint: '你关注的养宠伙伴' },
@@ -75,12 +80,17 @@ async function load(reset = true): Promise<void> {
     if (feed.value === 'NEARBY' && (latitude.value == null || longitude.value == null)) {
       await locate()
     }
-    const result = await listCommunityPosts({
-      feed: feed.value, topicId: topicId.value || undefined,
-      latitude: feed.value === 'NEARBY' ? latitude.value : undefined,
-      longitude: feed.value === 'NEARBY' ? longitude.value : undefined,
-      radiusKm: 20, page: page.value, size: 12,
-    })
+    const result = feed.value === 'FOR_YOU'
+      ? await listRecommendations(page.value, 12).then((value) => ({
+          ...value,
+          items: value.items.map((item) => ({ ...item.post, recommendationReason: item.reason })),
+        }))
+      : await listCommunityPosts({
+          feed: feed.value, topicId: topicId.value || undefined,
+          latitude: feed.value === 'NEARBY' ? latitude.value : undefined,
+          longitude: feed.value === 'NEARBY' ? longitude.value : undefined,
+          radiusKm: 20, page: page.value, size: 12,
+        })
     posts.value = reset ? result.items : [...posts.value, ...result.items]
     total.value = result.total
   } catch (cause) { error.value = readable(cause) }
@@ -128,6 +138,48 @@ async function toggleFavorite(post: CommunityPost): Promise<void> {
   post.favoriteCount += next ? 1 : -1
   try { const result = await setPostFavorite(post.id, next); post.viewerFavorited = result.active; post.favoriteCount = result.count }
   catch (cause) { post.viewerFavorited = !next; post.favoriteCount += next ? -1 : 1; ElMessage.error(readable(cause)) }
+}
+
+async function toggleRepost(post: CommunityPost): Promise<void> {
+  const next = !post.viewerReposted
+  post.viewerReposted = next
+  post.repostCount += next ? 1 : -1
+  try {
+    const result = await setPostRepost(post.id, next)
+    post.viewerReposted = result.active
+    post.repostCount = result.count
+    ElMessage.success(result.active ? '已转发到你的动态关系中' : '已取消转发')
+  } catch (cause) {
+    post.viewerReposted = !next
+    post.repostCount += next ? -1 : 1
+    ElMessage.error(readable(cause))
+  }
+}
+
+async function hideRecommendation(post: CommunityPost): Promise<void> {
+  try {
+    await setRecommendationNotInterested(post.id, true)
+    posts.value = posts.value.filter((item) => item.id !== post.id)
+    total.value = Math.max(0, total.value - 1)
+    ElMessage.success('已减少此类推荐，你可以随时通过接口撤销反馈')
+  } catch (cause) { ElMessage.error(readable(cause)) }
+}
+
+async function controlAuthor(post: CommunityPost, type: 'mute' | 'block'): Promise<void> {
+  const label = type === 'block' ? '拉黑' : '静音'
+  try {
+    await ElMessageBox.confirm(
+      type === 'block' ? '拉黑后双方不能互看、关注、评论或私信。确认继续吗？' : '静音后你将不再在信息流看到该作者。',
+      `${label}${post.authorDisplayName}`,
+      { type: 'warning' },
+    )
+    await setUserRelation(post.authorId, type, true)
+    posts.value = posts.value.filter((item) => item.authorId !== post.authorId)
+    ElMessage.success(`已${label}该用户`)
+  } catch (cause) {
+    if (cause === 'cancel' || cause === 'close') return
+    ElMessage.error(readable(cause))
+  }
 }
 
 async function toggleFollow(post: CommunityPost): Promise<void> {
@@ -237,7 +289,7 @@ onMounted(initialize)
         <section class="community-rail-card">
           <div class="community-rail-title"><span>宠</span><div><p class="eyebrow">PET COMMUNITY</p><h1>宠友圈</h1></div></div>
           <nav class="community-feed-nav">
-            <button v-for="option in feedOptions" :key="option.value" :class="{ active: feed === option.value }" @click="chooseFeed(option.value)"><span>{{ option.value === 'LATEST' ? '◷' : option.value === 'HOT' ? '♨' : option.value === 'FOLLOWING' ? '♡' : '⌖' }}</span><div><strong>{{ option.label }}</strong><small>{{ option.hint }}</small></div></button>
+            <button v-for="option in feedOptions" :key="option.value" :class="{ active: feed === option.value }" @click="chooseFeed(option.value)"><span>{{ option.value === 'FOR_YOU' ? '✦' : option.value === 'LATEST' ? '◷' : option.value === 'HOT' ? '♨' : option.value === 'FOLLOWING' ? '♡' : '⌖' }}</span><div><strong>{{ option.label }}</strong><small>{{ option.hint }}</small></div></button>
           </nav>
         </section>
 
@@ -270,7 +322,7 @@ onMounted(initialize)
         <PageState v-if="loading" type="loading" message="正在整理宠友们的新鲜分享…" />
         <PageState v-else-if="error" type="error" :message="error" @retry="load" />
         <PageState v-else-if="posts.length === 0" type="empty" :message="feed === 'FOLLOWING' ? '关注喜欢的作者后，他们的分享会出现在这里。' : '这个信息流暂时还没有内容。'" />
-        <div v-else class="community-feed-list"><CommunityPostCard v-for="post in posts" :key="post.id" :post="post" :current-user-id="auth.user?.id" @open="openPost" @like="toggleLike" @favorite="toggleFavorite" @follow="toggleFollow" @report="reportPost" /></div>
+        <div v-else class="community-feed-list"><CommunityPostCard v-for="post in posts" :key="post.id" :post="post" :current-user-id="auth.user?.id" @open="openPost" @like="toggleLike" @favorite="toggleFavorite" @repost="toggleRepost" @follow="toggleFollow" @not-interested="hideRecommendation" @mute="controlAuthor($event, 'mute')" @block="controlAuthor($event, 'block')" @report="reportPost" /></div>
         <button v-if="!loading && canLoadMore" class="button button-secondary load-more" :disabled="loadingMore" @click="loadMore">{{ loadingMore ? '加载中…' : '查看更多分享' }}</button>
       </main>
       <button v-show="showBackToTop" class="community-back-top" aria-label="回到信息流顶部" title="回到顶部" @click="scrollFeedToTop">↑<small>顶部</small></button>
@@ -295,7 +347,7 @@ onMounted(initialize)
     <CommunityPostEditorDialog v-model="composerOpen" @saved="handlePostSaved" />
 
     <el-drawer v-model="detailOpen" size="min(720px, 100vw)" :with-header="false" class="post-detail-drawer">
-      <article v-if="selectedPost" class="post-detail"><button class="drawer-close" @click="detailOpen = false">×</button><span class="topic-pill">{{ selectedPost.topicName || '萌宠日常' }}</span><h1>{{ selectedPost.title }}</h1><RouterLink :to="`/app/users/${selectedPost.authorId}`" class="detail-author-row" @click="detailOpen = false"><span class="avatar">{{ selectedPost.authorDisplayName.slice(0, 1) }}</span><div><strong>{{ selectedPost.authorDisplayName }}</strong><small>@{{ selectedPost.authorUsername }}</small></div></RouterLink><p class="post-detail-copy">{{ selectedPost.content }}</p><CommunityMediaGallery v-if="selectedPost.media.length" :media="selectedPost.media" :alt="selectedPost.title" /><div class="detail-actions"><button :class="{ active: selectedPost.viewerLiked }" @click="toggleLike(selectedPost)">♡ {{ selectedPost.likeCount }}</button><button :class="{ active: selectedPost.viewerFavorited }" @click="toggleFavorite(selectedPost)">收藏 {{ selectedPost.favoriteCount }}</button><button @click="reportPost(selectedPost)">举报</button></div><section class="comment-section"><h2>评论 {{ selectedPost.commentCount }}</h2><PageState v-if="commentLoading" type="loading" message="正在加载评论…" /><p v-else-if="comments.length === 0" class="muted">还没有评论，来留下第一条回应吧。</p><article v-for="comment in comments" :key="comment.id" class="comment-item" :class="{ reply: comment.depth === 1 }"><RouterLink :to="`/app/users/${comment.authorId}`" class="avatar avatar-small" @click="detailOpen = false">{{ comment.authorDisplayName.slice(0, 1) }}</RouterLink><div><RouterLink :to="`/app/users/${comment.authorId}`" @click="detailOpen = false"><strong>{{ comment.authorDisplayName }}</strong></RouterLink><p>{{ comment.content }}</p><small>{{ new Date(comment.createdAt).toLocaleString('zh-CN') }}</small><div><button v-if="comment.depth === 0" @click="replyTo = comment">回复</button><button v-if="comment.viewerCanDelete" class="text-danger" @click="removeComment(comment)">删除</button></div></div></article><div class="comment-composer"><span v-if="replyTo">回复 {{ replyTo.authorDisplayName }} <button @click="replyTo = undefined">取消</button></span><el-input v-model="commentText" type="textarea" :rows="3" maxlength="2000" placeholder="友善交流，分享真实养宠经验。" /><button class="button button-primary" @click="submitComment">发表评论</button></div></section></article>
+      <article v-if="selectedPost" class="post-detail"><button class="drawer-close" @click="detailOpen = false">×</button><span class="topic-pill">{{ selectedPost.topicName || '萌宠日常' }}</span><h1>{{ selectedPost.title }}</h1><RouterLink :to="`/app/users/${selectedPost.authorId}`" class="detail-author-row" @click="detailOpen = false"><span class="avatar">{{ selectedPost.authorDisplayName.slice(0, 1) }}</span><div><strong>{{ selectedPost.authorDisplayName }}</strong><small>@{{ selectedPost.authorUsername }}</small></div></RouterLink><p class="post-detail-copy">{{ selectedPost.content }}</p><CommunityMediaGallery v-if="selectedPost.media.length" :media="selectedPost.media" :alt="selectedPost.title" /><div class="detail-actions"><button :class="{ active: selectedPost.viewerLiked }" @click="toggleLike(selectedPost)">♡ {{ selectedPost.likeCount }}</button><button :class="{ active: selectedPost.viewerFavorited }" @click="toggleFavorite(selectedPost)">收藏 {{ selectedPost.favoriteCount }}</button><button :class="{ active: selectedPost.viewerReposted }" @click="toggleRepost(selectedPost)">转发 {{ selectedPost.repostCount }}</button><button @click="reportPost(selectedPost)">举报</button></div><section class="comment-section"><h2>评论 {{ selectedPost.commentCount }}</h2><PageState v-if="commentLoading" type="loading" message="正在加载评论…" /><p v-else-if="comments.length === 0" class="muted">还没有评论，来留下第一条回应吧。</p><article v-for="comment in comments" :key="comment.id" class="comment-item" :class="{ reply: comment.depth === 1 }"><RouterLink :to="`/app/users/${comment.authorId}`" class="avatar avatar-small" @click="detailOpen = false">{{ comment.authorDisplayName.slice(0, 1) }}</RouterLink><div><RouterLink :to="`/app/users/${comment.authorId}`" @click="detailOpen = false"><strong>{{ comment.authorDisplayName }}</strong></RouterLink><p>{{ comment.content }}</p><small>{{ new Date(comment.createdAt).toLocaleString('zh-CN') }}</small><div><button v-if="comment.depth === 0" @click="replyTo = comment">回复</button><button v-if="comment.viewerCanDelete" class="text-danger" @click="removeComment(comment)">删除</button></div></div></article><div class="comment-composer"><span v-if="replyTo">回复 {{ replyTo.authorDisplayName }} <button @click="replyTo = undefined">取消</button></span><el-input v-model="commentText" type="textarea" :rows="3" maxlength="2000" placeholder="友善交流，分享真实养宠经验。" /><button class="button button-primary" @click="submitComment">发表评论</button></div></section></article>
     </el-drawer>
   </section>
 </template>

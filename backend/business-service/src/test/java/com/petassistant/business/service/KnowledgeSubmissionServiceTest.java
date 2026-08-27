@@ -62,7 +62,7 @@ class KnowledgeSubmissionServiceTest {
         CommunityPostView post = new CommunityPostView(
                 "post-1", "user-1", "alice", "爱猫人", null, null, null, null,
                 "幼猫饮水经验", "每天清洗水碗并观察饮水变化。", null, null, null,
-                "PUBLISHED", 0, 0, 0, 0, 1, now, now, now
+                "PUBLISHED", 0, 0, 0, 0, 0, 1, now, now, now
         );
         KnowledgeSubmissionEntity[] stored = new KnowledgeSubmissionEntity[1];
         when(postMapper.findOwnedView("post-1", "user-1")).thenReturn(post);

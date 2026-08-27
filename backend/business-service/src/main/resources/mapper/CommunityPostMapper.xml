@@ -18,6 +18,7 @@
             <arg column="like_count" javaType="_long"/>
             <arg column="comment_count" javaType="_long"/>
             <arg column="favorite_count" javaType="_long"/>
+            <arg column="repost_count" javaType="_long"/>
             <arg column="version" javaType="_int"/>
             <arg column="published_at" javaType="java.time.Instant"/>
             <arg column="created_at" javaType="java.time.Instant"/>
@@ -45,6 +46,7 @@
             <arg column="like_count" javaType="_long"/>
             <arg column="comment_count" javaType="_long"/>
             <arg column="favorite_count" javaType="_long"/>
+            <arg column="repost_count" javaType="_long"/>
             <arg column="version" javaType="_int"/>
             <arg column="published_at" javaType="java.time.Instant"/>
             <arg column="created_at" javaType="java.time.Instant"/>
@@ -54,7 +56,7 @@
 
     <sql id="postColumns">
         id, author_id, pet_profile_id, topic_id, title, content, region, latitude, longitude, status,
-        view_count, like_count, comment_count, favorite_count, version,
+        view_count, like_count, comment_count, favorite_count, repost_count, version,
         published_at, created_at, updated_at
     </sql>
 
@@ -62,18 +64,18 @@
         p.id, p.author_id, u.username AS author_username, u.display_name AS author_display_name,
         p.pet_profile_id, pet.name AS pet_name, p.topic_id, t.name AS topic_name,
         p.title, p.content, p.region, p.latitude, p.longitude, p.status, p.view_count, p.like_count,
-        p.comment_count, p.favorite_count, p.version, p.published_at, p.created_at, p.updated_at
+        p.comment_count, p.favorite_count, p.repost_count, p.version, p.published_at, p.created_at, p.updated_at
     </sql>
 
     <insert id="insert">
         INSERT INTO community_post
             (id, author_id, pet_profile_id, topic_id, title, content, region, latitude, longitude, status,
-             view_count, like_count, comment_count, favorite_count, version,
+             view_count, like_count, comment_count, favorite_count, repost_count, version,
              published_at, created_at, updated_at)
         VALUES
             (#{id}, #{authorId}, #{petProfileId}, #{topicId}, #{title}, #{content}, #{region},
              #{latitude}, #{longitude}, #{status},
-             #{viewCount}, #{likeCount}, #{commentCount}, #{favoriteCount}, #{version},
+             #{viewCount}, #{likeCount}, #{commentCount}, #{favoriteCount}, #{repostCount}, #{version},
              #{publishedAt}, #{createdAt}, #{updatedAt})
     </insert>
 

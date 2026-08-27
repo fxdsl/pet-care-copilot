@@ -8,6 +8,7 @@ import com.petassistant.business.data.dto.request.CreateCommunityCommentRequest;
 import com.petassistant.business.data.dto.request.CreateCommunityReportRequest;
 import com.petassistant.business.data.dto.request.ModerateCommunityReportRequest;
 import com.petassistant.business.data.mapper.CommunityPostMapper;
+import com.petassistant.business.data.mapper.CommunityGovernanceMapper;
 import com.petassistant.business.data.mapper.CommunitySocialMapper;
 import com.petassistant.business.data.mapper.UserMapper;
 import com.petassistant.business.exception.CommunityInteractionConflictException;
@@ -30,6 +31,7 @@ import static org.mockito.Mockito.when;
 class CommunitySocialServiceTest {
 
     @Mock CommunitySocialMapper mapper;
+    @Mock CommunityGovernanceMapper governanceMapper;
     @Mock CommunityPostMapper postMapper;
     @Mock UserMapper userMapper;
     @Mock CommunityPostCacheService postCache;
@@ -99,7 +101,7 @@ class CommunitySocialServiceTest {
 
     private CommunitySocialService service() {
         return new CommunitySocialService(
-                mapper, postMapper, userMapper, postCache, socialCache, recommendationService, messageService,
+                mapper, governanceMapper, postMapper, userMapper, postCache, socialCache, recommendationService, messageService,
                 org.mockito.Mockito.mock(OutboxService.class)
         );
     }

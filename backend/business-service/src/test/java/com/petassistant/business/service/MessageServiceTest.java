@@ -6,7 +6,9 @@ import java.util.Map;
 import com.petassistant.business.data.dto.internal.UnreadCountRow;
 import com.petassistant.business.data.entity.NotificationEntity;
 import com.petassistant.business.data.mapper.MessageMapper;
+import com.petassistant.business.data.mapper.CommunityGovernanceMapper;
 import com.petassistant.business.data.mapper.UserMapper;
+import com.petassistant.business.data.dto.request.SendDirectMessageRequest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -16,6 +18,7 @@ import org.springframework.data.redis.core.HashOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
@@ -27,6 +30,7 @@ import static org.mockito.Mockito.when;
 class MessageServiceTest {
 
     @Mock MessageMapper mapper;
+    @Mock CommunityGovernanceMapper governanceMapper;
     @Mock UserMapper userMapper;
     @Mock StringRedisTemplate redisTemplate;
     @Mock HashOperations<String, Object, Object> hashOperations;
@@ -61,7 +65,18 @@ class MessageServiceTest {
         verify(hashOperations).putAll(any(), any());
     }
 
+    @Test
+    void blockRelationRejectsDirectMessageBeforeCreatingConversation() {
+        when(governanceMapper.existsBlockEitherDirection("user-1", "user-2")).thenReturn(true);
+
+        assertThatThrownBy(() -> service().send("user-1", new SendDirectMessageRequest(
+                "user-2", "client-message-1", "你好"
+        ))).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("不能发送私信");
+
+        verify(mapper, never()).insertDirectMessage(any());
+    }
+
     private MessageService service() {
-        return new MessageService(mapper, userMapper, redisTemplate, realtimeEventService);
+        return new MessageService(mapper, governanceMapper, userMapper, redisTemplate, realtimeEventService);
     }
 }
