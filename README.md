@@ -26,7 +26,7 @@
 - [x] 第十一周：知识投稿/审核工作台、管理员资料上传与可撤回 RAG 发布
 - [x] 第十二周：统一搜索、内容发现与 OpenSearch 混合检索
 - [x] 第十三周：个性化推荐、社区治理增强与定时任务
-- [x] 第十四周：统一网关、稳定性、监控、交付配置与自助部署教程
+- [x] 第十四周：单体入口简化、稳定性、监控、交付配置与自助部署教程（保留可选 Gateway）
 
 详细开发记录：
 
@@ -55,7 +55,7 @@
 .
 ├─ frontend/                         Vue 3 用户界面
 ├─ backend/business-service/         Spring Boot 业务编排与数据访问
-├─ backend/gateway-service/          Spring Cloud Gateway 统一入口
+├─ backend/gateway-service/          后期微服务拆分储备，默认不启动
 ├─ ai-service/                       FastAPI 文档处理与 AI 能力
 ├─ deploy/                           Compose、Prometheus、Grafana 配置
 ├─ scripts/                          本地辅助脚本
@@ -70,7 +70,8 @@
 社区治理：转发/屏蔽/拉黑/不感兴趣 → MySQL + Outbox → Redis 副本主动失效
 个性推荐：公开候选 → 关系过滤 → 宠物/话题/互动/时间衰减 → 可解释原因
 可靠任务：Quartz → Redisson Lock → MySQL 执行审计 → 三次失败转人工处理
-统一入口：浏览器 → Gateway 请求 ID/CORS/Redis 令牌桶 → Business 最终 JWT 鉴权
+默认入口：开发环境 Vue → Business；部署环境浏览器 → Nginx 限流/请求 ID → Business
+拆分储备：Gateway 模块保留在 microservices profile，当前不进入默认请求链
 稳定性：显式超时 → Resilience4j 隔离/熔断/受控重试 → Outbox 或安全降级
 可观察：关联日志 + Actuator → Prometheus → Grafana
 ```
@@ -82,8 +83,9 @@
 1. 启动 MySQL `3306`、Redis `6379`、RabbitMQ `5672/15672`、MinIO `9000/9001` 和 OpenSearch。默认 OpenSearch 地址为 `http://localhost:9200`；使用虚拟机时只在本机 `.env` 中覆盖 `OPENSEARCH_ENDPOINT`，不要提交机器专属地址。
 2. 在 IDEA Python 或终端启动 FastAPI，端口 `8000`。
 3. 在 IDEA Java 运行 `BusinessServiceApplication`，端口 `8080`。
-4. 运行 `GatewayServiceApplication`，端口 `8088`；浏览器 API 统一经过该入口。
-5. 在 VS Code 终端启动 Vue，端口 `5173`。
+4. 在 VS Code 终端启动 Vue，端口 `5173`；浏览器直接调用 Spring Boot `8080`。
+
+`GatewayServiceApplication` 端口 `8088` 仅供以后拆分微服务时验证，当前本地开发和默认 Compose 都不需要启动。
 
 仅使用普通问答时 RabbitMQ/MinIO/OpenSearch 可以暂时不启动；社区媒体需要 MinIO 和 RabbitMQ，知识投稿预检与发布需要 RabbitMQ、Redis 和 FastAPI。OpenSearch 未启动时统一搜索按相同公开权限降级 MySQL。系统状态页会分别显示每个依赖的 `UP/DOWN`，不会把所有故障都显示成“AI 服务不可用”。
 
@@ -177,11 +179,11 @@ Spring Boot 的本机数据库参数放在 `backend/business-service/.env`。该
 | Spring Boot | `PUT/DELETE /api/v1/community/users/{id}/follow` | 关注/取消关注用户 |
 | Spring Boot | `POST /api/v1/community/reports` | 举报帖子、评论或用户 |
 | Spring Boot | `GET/PUT /api/v1/community/check-ins/today` | 查询或完成今日养宠打卡 |
-| Gateway | `GET /api/v1/community/recommendations?page=0&size=20` | 获取带主要原因的个性化推荐 |
-| Gateway | `PUT/DELETE /api/v1/community/posts/{id}/repost` | 幂等转发、引用转发或取消 |
-| Gateway | `PUT/DELETE /api/v1/community/users/{id}/{MUTE或BLOCK}` | 屏蔽/拉黑或撤销 |
-| Gateway | `PUT/DELETE /api/v1/community/recommendations/{id}/not-interested` | 推荐反馈或撤销 |
+| Spring Boot | `GET /api/v1/community/recommendations?page=0&size=20` | 获取带主要原因的个性化推荐 |
+| Spring Boot | `PUT/DELETE /api/v1/community/posts/{id}/repost` | 幂等转发、引用转发或取消 |
+| Spring Boot | `PUT/DELETE /api/v1/community/users/{id}/{MUTE或BLOCK}` | 屏蔽/拉黑或撤销 |
+| Spring Boot | `PUT/DELETE /api/v1/community/recommendations/{id}/not-interested` | 推荐反馈或撤销 |
 | Spring Boot | `GET/PUT /api/v1/moderation/community/reports[/{id}]` | 管理端举报队列与处理 |
 | Spring Boot | `GET /api/v1/moderation/community/analytics/today` | 社区近似 UV 与治理积压 |
 
-> 第十三周所有推荐/治理接口的 Path、Query、Body、响应和 Redis/Quartz 边界见[第十三周开发文档](docs/第十三周.md)。Gateway、Resilience4j、Prometheus 和交付配置见[第十四周开发文档](docs/第十四周.md)。部署由项目所有者按[项目部署教程](docs/项目部署教程.md)自行完成。
+> 第十三周所有推荐/治理接口的 Path、Query、Body、响应和 Redis/Quartz 边界见[第十三周开发文档](docs/第十三周.md)。单体默认入口、可选 Gateway、Resilience4j、Prometheus 和交付配置见[第十四周开发文档](docs/第十四周.md)。部署由项目所有者按[项目部署教程](docs/项目部署教程.md)自行完成。

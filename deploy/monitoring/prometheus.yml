@@ -7,7 +7,5 @@ scrape_configs:
     metrics_path: /actuator/prometheus
     static_configs:
       - targets: [business-service:8080]
-  - job_name: gateway
-    metrics_path: /actuator/prometheus
-    static_configs:
-      - targets: [gateway:8088]
+  # Gateway 是后期微服务拆分储备，默认 profile 不启动，因此不创建永久 DOWN 的抓取目标。
+  # 启用 microservices profile 后，可把 gateway:8088 作为第二个 job 加回。

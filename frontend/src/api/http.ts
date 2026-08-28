@@ -26,7 +26,7 @@ export class ApiRequestError extends Error {
 
 // 所有浏览器请求只访问 Spring Boot，禁止前端绕过业务层直连 FastAPI。
 export const businessApiBaseUrl =
-  import.meta.env.VITE_BUSINESS_API_BASE_URL ?? 'http://localhost:8088'
+  import.meta.env.VITE_BUSINESS_API_BASE_URL ?? 'http://localhost:8080'
 
 let refreshInFlight: Promise<boolean> | undefined
 
@@ -77,7 +77,7 @@ export async function apiRequest<T>(
     throw new ApiRequestError(
       'NETWORK_ERROR',
       0,
-      '无法连接统一网关，请确认 Gateway 8088 与 Spring Boot 8080 均已启动',
+      '无法连接业务服务，请确认 Spring Boot 8080 已启动',
     )
   }
 
