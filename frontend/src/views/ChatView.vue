@@ -49,6 +49,25 @@ const streamStatus = ref('')
 const lastFailedRequest = ref<ChatRequest>()
 let streamController: AbortController | undefined
 
+/** 公网 HTTP 不提供 crypto.randomUUID；使用仍可用的 getRandomValues 生成 UUID v4。 */
+function createRequestId(): string {
+  if (typeof window.crypto?.randomUUID === 'function') return window.crypto.randomUUID()
+  if (typeof window.crypto?.getRandomValues !== 'function') {
+    return `legacy-${Date.now()}-${Math.random().toString(16).slice(2)}`.slice(0, 36)
+  }
+  const bytes = window.crypto.getRandomValues(new Uint8Array(16))
+  bytes[6] = (bytes[6]! & 0x0f) | 0x40
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80
+  const hex = Array.from(bytes, (value) => value.toString(16).padStart(2, '0'))
+  return [
+    hex.slice(0, 4).join(''),
+    hex.slice(4, 6).join(''),
+    hex.slice(6, 8).join(''),
+    hex.slice(8, 10).join(''),
+    hex.slice(10, 16).join(''),
+  ].join('-')
+}
+
 /** 新消息和历史加载后只滚动消息容器，不推动浏览器整个页面。 */
 async function scrollMessagesToEnd(): Promise<void> {
   await nextTick()
@@ -78,9 +97,9 @@ async function submit(): Promise<void> {
   streamStatus.value = '正在连接 Agent…'
   error.value = ''
   lastFailedRequest.value = undefined
-  activeRequestId.value = crypto.randomUUID()
   streamController = new AbortController()
   try {
+    activeRequestId.value = createRequestId()
     await streamQuestion({ ...request, requestId: activeRequestId.value }, (event) => {
       const data = asRecord(event.data)
       if (event.event === 'stage' || event.event === 'heartbeat') {
