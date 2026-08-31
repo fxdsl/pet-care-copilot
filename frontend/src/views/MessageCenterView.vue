@@ -20,6 +20,7 @@ import {
 import PageState from '../components/PageState.vue'
 import { useAuthStore } from '../stores/auth'
 import { useMessageStore, type RealtimeEvent } from '../stores/message'
+import { createRequestId } from '../utils/requestId'
 
 type CenterMode = 'DIRECT' | 'NOTIFICATION'
 
@@ -99,7 +100,7 @@ async function send(): Promise<void> {
   draft.value = ''
   try {
     const created = await sendDirectMessage({
-      recipientId: recipientId.value, clientMessageId: crypto.randomUUID(), content,
+      recipientId: recipientId.value, clientMessageId: createRequestId(), content,
     })
     if (!selectedConversationId.value) {
       await loadConversations()
