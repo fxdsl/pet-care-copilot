@@ -94,35 +94,67 @@ public class KnowledgeSubmissionService {
     public KnowledgeSubmissionResponse submitCommunity(
             String userId, CreateCommunityKnowledgeSubmissionRequest request
     ) {
+        //检查帖子是否存在且已发布
+        //查询帖子信息并验证：
+        //帖子必须存在
+        //必须是当前用户自己的帖子（findOwnedView 会验证所有权）
+        //状态必须是 PUBLISHED（已发布）
         CommunityPostView post = postMapper.findOwnedView(request.postId().trim(), userId);
         if (post == null || !"PUBLISHED".equals(post.status())) {
             throw new IllegalArgumentException("只能提交自己已发布的社区帖子");
         }
+        //对用户输入的宠物类型和分类进行标准化处理
         String petType = normalizePetType(request.petType());
         String category = normalizeCategory(request.category());
+        //避免重复提交投稿
         KnowledgeSubmissionEntity existing = mapper.findBySource("COMMUNITY_POST", post.id());
         Instant now = Instant.now();
         KnowledgeSubmissionEntity current;
         if (existing == null) {
+            //首次提交投稿
             current = newSubmission(
-                    "COMMUNITY_POST", post.id(), userId, post.title(), "宠里个宠社区",
+                    "COMMUNITY_POST", // 来源类型
+                    post.id(), // 来源ID（帖子ID）
+                    userId, // 提交者
+                    post.title(), // 标题
+                    "宠里个宠社区",// 来源平台名称
                     post.authorDisplayName() == null ? post.authorUsername() : post.authorDisplayName(),
-                    null, null, "TEXT", petType, category, post.content(), "GRANTED", null, null, now
+                    null,
+                    null, // 外部链接、封面图
+                    "TEXT", // 内容类型
+                    petType,
+                    category, // 宠物类型、分类
+                    post.content(), // 正文内容
+                    "GRANTED", // 授权状态（已授权）
+                    null,
+                    null, // 预检结果、审核备注
+                now
             );
             mapper.insert(current);
         } else {
+            //重新提交投稿,使用乐观锁确保数据一致性
+            //检查当前投稿记录的状态是否在允许重提交的集合中
+            //FINAL_OR_RETRYABLE 是一个预定义的状态集合（可能包含：APPROVED、REJECTED、WITHDRAWN 等终态）
+            //如果状态是 PRECHECKING（预检中）或 REVIEWING（审核中）等中间状态，则拒绝重复提交
             if (!FINAL_OR_RETRYABLE.contains(existing.status())) {
                 throw new KnowledgeSubmissionConflictException("该帖子已有进行中的知识投稿，不能重复提交");
             }
+            //利用乐观锁确保数据一致性，避免并发更新导致的冲突
             int nextVersion = existing.currentVersion() + 1;
+            //更新投稿记录的版本号和状态为 PRECHECKING（预检中）
+            //AND current_version = #{currentVersion} 是乐观锁的核心，确保在更新时检查当前版本是否匹配
             if (mapper.resetForResubmission(
                     existing.id(), userId, post.title(), post.content(), petType, category, nextVersion, now
             ) == 0) {
                 throw new KnowledgeSubmissionConflictException("投稿状态已变化，请刷新后重试");
             }
+            //查询最新数据
             current = mapper.findById(existing.id());
         }
+        //记录操作日志/时间线，用于后续的进度追踪
         recordSubmitted(current, userId, now);
+        //重新查询最新的完整数据（包含生成的主键ID等）
+        //转换为 DTO 返回给 Controller 层
         return toResponse(mapper.findById(current.id()), true);
     }
 
@@ -156,36 +188,94 @@ public class KnowledgeSubmissionService {
 
     /** 写版本快照、时间线和 Outbox 必须与投稿主记录同事务提交。 */
     private void recordSubmitted(KnowledgeSubmissionEntity submission, String actorId, Instant now) {
+        //写入版本快照
+        //在版本历史表中插入一条新记录
+        //快照机制：保存当前版本的标题和正文，即使原帖被修改，此版本的内容也不会变
+        //为什么需要版本表？
+        //场景：用户修改了帖子内容并重新提交
+        //├─ 版本1：标题="如何给猫洗澡"，内容="第一步..."
+        //├─ 版本2：标题="猫咪洗澡指南"（修改后），内容="更新后的步骤..."
+        //└─ 可以回溯查看每个版本的具体内容
         mapper.insertVersion(new KnowledgeSubmissionVersionEntity(
                 UUID.randomUUID().toString(), submission.id(), submission.currentVersion(), submission.title(),
                 submission.originalContent(), null, null, null, null, null, null, now
         ));
+        //记录操作日志/时间线，用于后续的进度追踪
         record(submission.id(), submission.currentVersion(), actorId, "SUBMITTED", null, "已提交预检");
+        //发送领域事件（Outbox模式）,实现分布式事务。
+        //什么是 Outbox 模式？
+        //传统问题：
+        //┌─────────────┐      ┌─────────────┐
+        //│  数据库事务   │ ──→  │  发送消息    │  ❌ 如果消息发送失败，数据已提交但不一致！
+        //│  (已提交)    │      │  (失败)     │
+        //└─────────────┘      └─────────────┘
+        //
+        //Outbox 模式解决：
+        //┌──────────────────────────────────────────┐
+        //│          同一个数据库事务                   │
+        //│  ┌──────────┐    ┌──────────────────┐     │
+        //│  │ 业务数据   │ +  │ Outbox 表记录     │     │
+        //│  │ (INSERT)  │    │ (INSERT)         │     │
+        //│  └──────────┘    └──────────────────┘     │
+        //└──────────────────────────────────────────┘
+        //                        ↓
+        //              后台定时任务扫描 Outbox 表
+        //                        ↓
+        //              发送到消息队列 / 调用外部服务
+        //                        ↓
+        //              标记为已发送（防止重复）
         outboxService.record("KNOWLEDGE_SUBMISSION", submission.id(), "KNOWLEDGE_PRECHECK_REQUESTED", actorId);
+        //清除该投稿相关的缓存数据
+        //保证下次查询时从数据库读取最新状态
         evictCache(submission.id());
     }
 
     /** RabbitMQ 消费者调用的幂等预检；重复消息无法越过 PRECHECKING 条件。 */
     @Transactional
     public void processPrecheck(String submissionId) {
+        // 1. 查询知识提交记录
         KnowledgeSubmissionEntity submission = requireSubmission(submissionId);
+        // 2. 检查状态机条件（必须是 PRECHECKING 状态才能预检）
+        //检查当前状态是否为 "PRECHECKING"（预检中）
+        //如果不是 PRECHECKING 状态 → 立即返回，不做任何处理
+        //如果是 PRECHECKING 状态 → 继续执行后续逻辑
         if (!"PRECHECKING".equals(submission.status())) return;
+        //3. 调用 AI 预检服务进行风险评估
         AiKnowledgePrecheckResponse result = aiClient.precheck(
                 submission.title(), submission.originalContent(), submission.sourceType()
         );
+        //拼接风险标签
         String labels = String.join(",", result.riskLabels());
+        //完成预检，更新知识提交记录的状态为 PENDING_REVIEW（待审核中）
+        //使用乐观锁
+        //什么时候返回 0？
+        //
+        //版本号不匹配：其他事务已经更新了这条记录（并发冲突）
+        //状态不是 PRECHECKING：已经被其他流程处理过了
+        //记录不存在：ID 无效（理论上不可能，因为前面已经 require 过了）
         if (mapper.completePrecheck(
                 submission.id(), submission.currentVersion(), result.cleanedContent(), result.checksum(),
                 result.summary(), result.riskLevel(), labels, result.qualityScore(), Instant.now()
         ) == 0) return;
+        //更新版本历史表
+        //为什么要保留版本历史？
+        //
+        //审计追踪：可以看到每次修改的内容变化
+        //回滚能力：如果发现 AI 审核有误，可以回退到之前的版本
+        //数据分析：分析内容质量和风险趋势
+        //去重检测：通过 checksum 判断是否与已有内容重复
         mapper.updateVersionPrecheck(
                 submission.id(), submission.currentVersion(), result.cleanedContent(), result.checksum(),
                 result.summary(), result.riskLevel(), labels, result.qualityScore()
         );
+        //记录预检完成事件，更新knowledge_review_record表。
         record(submission.id(), submission.currentVersion(), null, "PRECHECK_COMPLETED", null,
                 "预检完成：" + result.riskLevel());
+        //将投稿添加到审核队列,用zset存储。
         addReviewQueue(submission.id(), result.riskLevel(), submission.createdAt());
+        //更新去重布隆过滤器
         updateChecksumBloom(result.checksum());
+        //更新缓存
         writeSubmissionCache(mapper.findById(submission.id()));
     }
 
@@ -432,11 +522,22 @@ public class KnowledgeSubmissionService {
             );
         }
     }
+    /**id	String	知识提交ID	"sub_abc123"
+     riskLevel	String	AI 预检的风险等级	"HIGH", "MEDIUM", "LOW", "CRITICAL"
+     createdAt	Instant	知识提交的创建时间	2026-08-31T09:00:00Z*/
 
     private void addReviewQueue(String id, String riskLevel, Instant createdAt) {
         try {
-            double priority = switch (riskLevel) { case "HIGH" -> 0; case "MEDIUM" -> 1_000_000_000_000d; default -> 2_000_000_000_000d; };
-            redisTemplate.opsForZSet().add("knowledge:review:queue", id, priority + createdAt.toEpochMilli());
+            //基于风险等级计算优先级分数
+            //关键点：数值间隔要足够大,因为需要加上创建时间戳,避免与创建时间戳冲突
+            double priority = switch (riskLevel)
+            { case "HIGH" -> 0;
+                case "MEDIUM" -> 1_000_000_000_000d;
+                default -> 2_000_000_000_000d; };
+            //添加到 Redis 有序集合
+            redisTemplate.opsForZSet().add("knowledge:review:queue",
+                id,
+                priority + createdAt.toEpochMilli());
         } catch (DataAccessException error) {
             log.debug("Knowledge review queue unavailable: {}", error.toString());
         }

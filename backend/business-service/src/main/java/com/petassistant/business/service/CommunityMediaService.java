@@ -16,7 +16,7 @@ import com.petassistant.business.exception.CommunityMediaNotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** 社区媒体申请、MinIO 确认、归属绑定和私有下载授权。 */
+/** 社区媒体申请、MinIO 确认、归属绑定和永久公开地址。 */
 @Service
 public class CommunityMediaService {
 
@@ -75,13 +75,12 @@ public class CommunityMediaService {
         return toResponse(requireOwned(userId, mediaId));
     }
 
-    /** 只有对象所有者或已发布帖子读者可以申请短期下载地址。 */
+    /** 保留原接口兼容前端，返回公开 Bucket 中不带过期签名的永久地址。 */
     @Transactional(readOnly = true)
     public MediaDownloadResponse download(String userId, String mediaId) {
         CommunityMediaEntity media = mapper.findAccessible(mediaId, userId);
         if (media == null) throw new CommunityMediaNotFoundException();
-        ObjectStorageService.PresignedUrl url = objectStorage.createDownloadUrl(media.objectKey());
-        return new MediaDownloadResponse(url.url(), url.expiresAt());
+        return new MediaDownloadResponse(objectStorage.createPublicUrl(media.objectKey()), null);
     }
 
     public CommunityMediaEntity requireOwned(String userId, String mediaId) {

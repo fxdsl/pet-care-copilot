@@ -31,6 +31,7 @@ public class KnowledgeSubmissionController {
 
     /** 创建社区帖子知识投稿，返回 PRECHECKING 状态。 */
     @PostMapping("/community")
+    //成功后返回201 Created状态码
     @ResponseStatus(HttpStatus.CREATED)
     public KnowledgeSubmissionResponse submitCommunity(
             Principal principal,

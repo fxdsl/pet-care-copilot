@@ -112,7 +112,8 @@ public class ChatService {
             // 续接旧会话：读取最近12条消息作为上下文，同时验证会话有效性（无效ID返回404）
             history = conversationService.getRecentMessagesForContext(userId, conversationId, 12);
         }
-
+        //将当前会话ID放入 MDC (Mapped Diagnostic Context) 中，让后续所有日志都能自动携带这个ID！
+        // 这样，后续的日志记录（如错误日志）都能包含会话ID，方便定位问题。
         MDC.put("conversationId", conversationId);
         try {
         // ④ 确定有效的宠物类型：有档案时优先使用档案数据（更准确），无档案时使用请求参数（兜底）
@@ -197,13 +198,14 @@ public class ChatService {
                 sources,                  // 参考资料来源列表
                 aiResponse.stage(),       // 处理阶段标识
                 aiResponse.modelName(),   // 实际模型名称
-                aiResponse.routingReason(),
-                aiResponse.maxScore(),
-                agentSteps,
-                aiResponse.terminationReason(),
-                aiResponse.toolCallCount()
+                aiResponse.routingReason(), // 路由原因（如模型选择、上下文匹配等）
+                aiResponse.maxScore(),     // 最大相似度得分（可信度指标）
+                agentSteps, // 模型思维过程（如工具调用、知识检索等）
+                aiResponse.terminationReason(),// 终止原因（如安全熔断、正常结束等）
+                aiResponse.toolCallCount()// 工具调用次数（如知识检索、工具执行等）
         );
         } finally {
+            //清除MDC中的会话ID，确保后续日志不会包含旧的会话ID
             MDC.remove("conversationId");
         }
     }

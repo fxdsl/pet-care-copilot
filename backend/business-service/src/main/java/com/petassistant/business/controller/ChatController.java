@@ -42,14 +42,25 @@ public class ChatController {
         return chatService.answer(principal.getName(), request);
     }
 
+    /**
+     * 接收问题并返回流式问答结果。
+     */
+
     /** POST SSE 允许携带完整问答 Body；重连时复用 requestId 并传 Last-Event-ID。 */
+    //响应类型: TEXT_EVENT_STREAM_VALUE - SSE 流式输出格式
     @PostMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    //Spring 提供的 SSE（Server-Sent Events）发送器
     public SseEmitter stream(
             Principal principal,
             @Valid @RequestBody ChatStreamRequest request,
+            //SSE 重连机制的事件ID，用于断点续传
             @RequestHeader(name = "Last-Event-ID", required = false) String lastEventId
     ) {
+        //断点续传机制。
+        //初始化游标: 默认 cursor = 0（从头开始）
         long cursor = 0;
+        //检查重连请求: 如果客户端携带了 Last-Event-ID 请求头，尝试解析为游标
+        //如果解析失败，抛出 IllegalArgumentException 异常
         if (lastEventId != null && !lastEventId.isBlank()) {
             try {
                 cursor = Long.parseLong(lastEventId);
@@ -57,9 +68,12 @@ public class ChatController {
                 throw new IllegalArgumentException("Last-Event-ID 必须是非负整数");
             }
         }
+        //如果确实为断点重连，调用流式服务: 将 cursor 传递给 streamingService.open() 实现从指定位置恢复数据流
+        //否则，从头开始发送数据流
         return streamingService.open(principal.getName(), request, cursor);
     }
 
+    /** DELETE 取消流式问答，返回 NO_CONTENT。 */
     @DeleteMapping("/streams/{requestId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void cancel(Principal principal, @PathVariable String requestId) {

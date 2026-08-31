@@ -29,6 +29,7 @@ public class OutboxPublisher {
     private final String searchRoutingKey;
     private final PlatformMetricsService metrics;
 
+    //赋值构造函数
     public OutboxPublisher(
             OutboxEventMapper mapper,
             ReliableRabbitPublisher rabbitPublisher,
@@ -62,22 +63,44 @@ public class OutboxPublisher {
     }
 
     private void publishOne(OutboxEventEntity event) {
+        //将当前事件 ID 放入线程本地变量，这样后续所有日志都会自动携带 eventId 字段
+        //作用：在分布式系统中快速定位某条事件的完整处理链路
         MDC.put("eventId", event.id());
         try {
             Instant now = Instant.now();
             // 数据库原子认领为事件设置五分钟处理租约；其他实例或已完成事件直接跳过。
+            //UPDATE integration_outbox
+            //SET status = 'PROCESSING',           -- 状态改为"处理中"
+            //    attempts = attempts + 1,         -- 尝试次数+1
+            //    next_attempt_at = '2026-...+05'  -- 设置新的重试时间（5分钟后）
+            //WHERE id = 'evt_abc123'              -- 匹配当前事件
+            //  AND status IN ('PENDING', 'FAILED', 'PROCESSING')  -- 只能是这三种状态
             if (mapper.claim(event.id(), now.plus(5, ChronoUnit.MINUTES)) == 0) return;
             try {
+                //事件类型智能路由
+                //针对你的场景：KnowledgeSubmissionService.java:227 写入的 "KNOWLEDGE_SUBMISSION" 类型事件会走 knowledge 路由。
+                //判断是否知识提交事件
                 boolean knowledgeEvent = "KNOWLEDGE_SUBMISSION".equals(event.aggregateType());
+                //判断是否搜索相关事件
+                //startsWith("SEARCH_"),检查事件类型是否以 "SEARCH_" 开头
                 boolean searchEvent = event.aggregateType().startsWith("SEARCH_");
+                //三元表达式选择 Exchange,消息路由中心，接收消息并根据规则分发到队列
+                //不同业务领域使用不同的 Exchange，实现 物理隔离
+                //比如：KNOWLEDGE_SUBMISSION 事件，先进入(knowledgeEvent ? knowledgeExchange : communityExchange)。
+                //在进行下一步判断选择knowledgeExchange
                 String exchange = searchEvent
                         ? searchExchange : (knowledgeEvent ? knowledgeExchange : communityExchange);
+                //三元表达式选择 Routing Key,消息路由规则，根据消息内容将消息分发到指定队列
                 String routingKey = searchEvent
                         ? searchRoutingKey : (knowledgeEvent ? knowledgeRoutingKey : communityRoutingKey);
+                //发送到对应队列。
                 rabbitPublisher.send(
                         exchange, routingKey, event.payloadJson(), event.id(), event.eventType()
                 );
+                //调用 Mapper 更新数据库状态为已发布
                 mapper.markPublished(event.id(), Instant.now());
+                //调用监控系统服务，记录 outbox 发布成功 的计数器
+                //参数 true 表示成功
                 metrics.recordOutboxPublished(true);
             } catch (RuntimeException exception) {
                 long delaySeconds = Math.min(300, 1L << Math.min(event.attempts() + 1, 8));

@@ -24,12 +24,19 @@ public class KnowledgeWorkflowConsumer {
 
     @RabbitListener(queues = "${app.knowledge.rabbit-queue}", autoStartup = "${app.knowledge.rabbit-listener-enabled:true}")
     public void consume(String json) throws Exception {
+        //将 JSON 字符串转换为 CommunityEventPayload 对象,
+        // 包含事件ID、事件类型、聚合ID、事件数据等
         CommunityEventPayload event = objectMapper.readValue(json, CommunityEventPayload.class);
+        //将事件ID 放入 MDC 中，方便日志记录和调试
         MDC.put("eventId", event.eventId());
         try {
+            //判断是否为预检请求,是则调用预检服务处理，用户使用预检服务检查知识是否符合要求
             if ("KNOWLEDGE_PRECHECK_REQUESTED".equals(event.eventType())) {
                 service.processPrecheck(event.aggregateId());
-            } else if ("KNOWLEDGE_PUBLISH_REQUESTED".equals(event.eventType())) {
+
+            }
+            //判断是否为发布请求,是则调用发布服务处理，管理者使用发布服务发布知识
+            else if ("KNOWLEDGE_PUBLISH_REQUESTED".equals(event.eventType())) {
                 service.processPublish(event.aggregateId());
             }
         } catch (RuntimeException error) {

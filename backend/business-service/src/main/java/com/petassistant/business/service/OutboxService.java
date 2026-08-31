@@ -23,6 +23,34 @@ public class OutboxService {
     }
 
     public void record(String aggregateType, String aggregateId, String eventType, String actorUserId) {
+        //记录业务事件到 Outbox 表
+        //public record OutboxEventEntity(
+        //    String id,              // ① 事件ID
+
+        //    String aggregateType,   // ② 聚合类型作用：标识属于哪个业务模块
+        //可能的值：
+        //"KNOWLEDGE_SUBMISSION" - 知识投稿
+        //"COMMUNITY_POST" - 社区帖子
+        //"USER_PROFILE" - 用户资料
+
+        //    String aggregateId,     // ③ 业务实体ID,具体是哪个业务对象触发了这个事件
+        //    String eventType,       // ④ 事件类型
+        //作用：描述发生了什么动作
+        //命名规范：{聚合}_{动作}_状态
+        //示例值：
+        //"KNOWLEDGE_PRECHECK_REQUESTED" - 请求预检
+        //"KNOWLEDGE_APPROVED" - 审核通过
+        //"KNOWLEDGE_REJECTED" - 审核驳回
+        //"COMMUNITY_POST_PUBLISHED" - 帖子发布
+
+
+        //    String payloadJson,     // ⑤ 事件载荷（JSON）
+        //    String status,          // ⑥ 处理状态
+        //    int attempts,           // ⑦ 重试次数
+        //    Instant nextAttemptAt,  // ⑧ 下次重试时间
+        //    Instant createdAt,      // ⑨ 创建时间
+        //    Instant publishedAt     // ⑩ 发布时间
+        //) { }
         Instant now = Instant.now();
         String eventId = UUID.randomUUID().toString();
         CommunityEventPayload payload = new CommunityEventPayload(

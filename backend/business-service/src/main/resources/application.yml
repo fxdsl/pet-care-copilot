@@ -147,11 +147,11 @@ app:
     bootstrap-admin-password: ${BOOTSTRAP_ADMIN_PASSWORD:}
   media:
     endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
+    public-endpoint: ${MINIO_PUBLIC_ENDPOINT:}
     access-key: ${MINIO_ACCESS_KEY:petassistant}
     secret-key: ${MINIO_SECRET_KEY:petassistant_dev_secret}
     bucket: ${MINIO_BUCKET:pet-community}
     upload-url-ttl: ${MINIO_UPLOAD_URL_TTL:10m}
-    download-url-ttl: ${MINIO_DOWNLOAD_URL_TTL:1m}
     connect-timeout: ${MINIO_CONNECT_TIMEOUT:2s}
     read-timeout: ${MINIO_READ_TIMEOUT:5s}
     max-image-bytes: ${MAX_IMAGE_BYTES:10485760}

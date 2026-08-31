@@ -33,6 +33,14 @@ public class MessageController {
         this.service = service;
     }
 
+    /**
+     * 获取对应类型的用户通知列表
+     * @param principal
+     * @param type
+     * @param page
+     * @param size
+     * @return
+     */
     @GetMapping("/notifications")
     public NotificationPageResponse notifications(
             Principal principal,
@@ -43,24 +51,40 @@ public class MessageController {
         return service.notifications(principal.getName(), type, page, size);
     }
 
+    /**
+     * 标记通知为已读
+     * @param principal
+     * @param notificationId
+     * @return
+     */
     @PutMapping("/notifications/{notificationId}/read")
     public NotificationResponse markRead(Principal principal, @PathVariable String notificationId) {
         return service.markNotificationRead(principal.getName(), notificationId);
     }
 
+    /**
+     * 标记所有通知为已读
+     * @param principal
+     * @param type
+     */
     @PutMapping("/notifications/read-all")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void markAllRead(Principal principal, @RequestParam(required = false) String type) {
         service.markAllNotificationsRead(principal.getName(), type);
     }
 
+    /**
+     * 获取用户未读消息数量
+     * @param principal
+     * @return
+     */
     @GetMapping("/unread")
     public MessageUnreadResponse unread(Principal principal) {
         return service.unread(principal.getName());
     }
 
     /**
-     * 获取直接消息对话列表
+     * 获取私信对话列表
      * @param principal
      * @param page
      * @param size
@@ -74,7 +98,14 @@ public class MessageController {
     ) {
         return service.conversations(principal.getName(), page, size);
     }
-
+    /**
+     * 获取私信对话详情
+     * @param principal
+     * @param conversationId
+     * @param page
+     * @param size
+     * @return
+     */
     @GetMapping("/conversations/{conversationId}")
     public DirectMessagePageResponse directMessages(
             Principal principal,
@@ -86,7 +117,7 @@ public class MessageController {
     }
 
     /**
-     * 发送直接消息
+     * 发送私信
      * @param principal
      * @param request
      * @return

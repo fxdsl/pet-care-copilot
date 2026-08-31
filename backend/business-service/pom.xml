@@ -79,7 +79,7 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-quartz</artifactId>
         </dependency>
-        <!-- MinIO 使用私有 Bucket 和短期预签名地址，业务表只保存对象 Key。 -->
+        <!-- MinIO 使用公开只读 Bucket；上传仍采用短期预签名 PUT，业务表只保存对象 Key。 -->
         <dependency>
             <groupId>io.minio</groupId>
             <artifactId>minio</artifactId>

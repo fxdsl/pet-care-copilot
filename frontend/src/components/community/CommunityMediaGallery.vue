@@ -25,7 +25,7 @@ const previewImages = computed(() => props.media
   .filter((url): url is string => Boolean(url)))
 
 /**
- * 浏览器只取得短期下载地址；界面永远不展示对象 Key 或原始文件名。
+ * 浏览器取得公开 Bucket 的永久地址；界面不展示对象 Key 或原始文件名。
  * 单个地址失败时保留媒体占位，不影响同一帖子里的其他图片。
  */
 async function loadUrl(item: CommunityMedia): Promise<void> {
@@ -49,7 +49,7 @@ async function loadUrls(media: CommunityMedia[]): Promise<void> {
 }
 
 /**
- * 短期签名地址失效或 MinIO 暂时不可达时，允许用户重新获取地址。
+ * MinIO 暂时不可达时，允许用户重新获取同一个永久地址。
  */
 async function retry(item: CommunityMedia): Promise<void> {
   delete urls[item.id]

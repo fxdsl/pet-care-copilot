@@ -270,7 +270,7 @@ export async function uploadCommunityMedia(file: File): Promise<CommunityMedia> 
   return confirmMediaUpload(ticket.mediaId)
 }
 
-/** 卡片图片使用短期地址；对象 Key 永远不进入浏览器响应。 */
+/** 卡片图片使用公开 Bucket 的永久地址；对象 Key 不进入帖子响应。 */
 export const getCommunityMediaUrl = (mediaId: string) => apiRequest<{ url: string; expiresAt?: string }>(
   `/api/v1/community/media/${mediaId}/download-url`,
 )

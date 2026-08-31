@@ -91,12 +91,15 @@ public class RealtimeEventService {
         } catch (DataAccessException | JsonProcessingException exception) {
             // 单机开发时 Redis 暂停仍可向本实例在线连接推送；离线数据可从 MySQL 恢复。
             log.warn("Realtime Redis publish failed, using local fallback: {}", exception.toString());
-            //将实时事件封包发送到本实例的所有在线连接。
+            //将实时事件封包发送到对应用户实例的所有在线连接。
             registry.sendRaw(recipientId, json);
         }
     }
 
-    /** Redis Pub/Sub 订阅回调；每个 Java 实例只发送给自己持有的连接。 */
+    /** 每个服务器实例收到 Redis 推送的 JSON 消息后：
+     反序列化 JSON 为 RealtimeEnvelope 对象
+     提取 recipientId（目标接收用户的 ID）
+     调用 registry.sendRaw() 将消息推送给当前实例上属于该用户的所有 WebSocket 连接 */
     public void receive(String json) {
         try {
             // 步骤 1: 解析 JSON，提取 recipientId
